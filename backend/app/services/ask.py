@@ -75,20 +75,72 @@ def _keyword_search(db: Session, viewer: m.User, question: str, visible, k: int)
              "text": lg.summary, "snippet": lg.summary, "score": 0.2} for lg in logs]
 
 
+SMALL_TALK = re.compile(r"^\s*(hi|hii+|hello|hey|yo|good (morning|afternoon|evening)|thanks|thank you|ok(ay)?|"
+                        r"who are you|what can you do|help)\b[\s!.?]*$", re.I)
+CAN_DO = ("Ask me about your team's work: why something changed, what someone is working on, what's stuck, "
+          "or where a project stands. I answer from tasks, emails, commits, meetings and SOPs you can see, "
+          "and link every answer to where it came from.")
+
+
+def _people_sources(db: Session, viewer: m.User, question: str) -> list[dict]:
+    """When the question names someone, add their current work (open tasks and today's plan)."""
+    visible = set(db.scalars(_visible_tasks(db, viewer)))
+    q = question.lower()
+    out = []
+    for u in db.scalars(select(m.User).where(m.User.kind == "human")):
+        first = u.name.split()[0].lower()
+        if not re.search(rf"\b({re.escape(u.name.lower())}|{re.escape(first)})\b", q):
+            continue
+        tasks = db.scalars(select(m.Task).where(m.Task.assignee_id == u.id, m.Task.status != "done")
+                           .order_by(m.Task.updated_at.desc())).all()
+        tasks = [t for t in tasks if t.id in visible]
+        status = {"todo": "to do", "doing": "in progress", "review": "in review"}
+        if tasks:
+            listing = "; ".join(f"{t.key} {t.title} ({status.get(t.status, t.status)}"
+                                f"{', due ' + t.due_at.strftime('%d %b') if t.due_at else ''})" for t in tasks[:8])
+            out.append({"type": "person", "id": u.id, "title": f"{u.name}'s open work",
+                        "meta": f"{len(tasks)} open task{'s' if len(tasks) != 1 else ''}",
+                        "text": f"{u.name} ({u.title}) currently has {len(tasks)} open tasks: {listing}.",
+                        "snippet": f"{u.name} has {len(tasks)} open tasks", "score": 1.0, "task_id": tasks[0].id})
+        plan = db.scalar(select(m.DayPlan).where(m.DayPlan.user_id == u.id).order_by(m.DayPlan.day.desc()).limit(1))
+        if plan and plan.items and (viewer.is_org_admin or viewer.id == u.id or
+                                    any(i["task_id"] in visible for i in plan.items)):
+            out.append({"type": "plan", "id": u.id, "title": f"{u.name}'s plan for {plan.day}",
+                        "meta": "My Day", "text": f"{u.name}'s plan for {plan.day}: " +
+                        "; ".join(f"{i['rank']}. {i['key']} {i['title']} ({i['why']})" for i in plan.items),
+                        "snippet": f"{u.name}'s top task today is {plan.items[0]['title']}", "score": 0.95,
+                        "task_id": plan.items[0]["task_id"]})
+    return out
+
+
 def answer(db: Session, viewer: m.User, question: str) -> dict:
-    sources = search(db, viewer, question)
+    if SMALL_TALK.match(question):
+        name = viewer.name.split()[0]
+        greeting = "" if re.match(r"\s*(what can you do|help|who are you)", question, re.I) else f"Hi {name}. "
+        text = greeting + CAN_DO
+        return {"answer": text, "segments": [{"text": text, "cite": 0}], "sources": [], "searched": 0}
+    sources = _people_sources(db, viewer, question) + search(db, viewer, question)
     if not sources:
-        return {"answer": "I couldn't find anything about that in the work you can see.", "segments": [], "sources": []}
-    numbered = "\n".join(f"[{i + 1}] {s['text'][:600]}" for i, s in enumerate(sources))
-    out = llm.generate_json(f"""Answer the question using ONLY these sources. Be brief (max 4 sentences), plain
-English, specific (names, keys, dates). Cite sources with their numbers. If the sources don't answer it, say so.
-Return JSON {{"segments": [{{"text": str, "cite": int or 0}}]}} — consecutive pieces of the answer, each with the
-source number that supports it (0 if none).
+        return {"answer": "I couldn't find anything about that in the work you can see.",
+                "segments": [{"text": "I couldn't find anything about that in the work you can see.", "cite": 0}],
+                "sources": []}
+    numbered = "\n".join(f"[{i + 1}] {s['text'][:700]}" for i, s in enumerate(sources))
+    out = llm.generate_json(f"""You are Relay, the team's assistant, answering {viewer.name.split()[0]}. Answer using
+ONLY the numbered notes below. Be brief (max 4 sentences), plain English and specific (names, task keys, dates).
+Prefer current status (open tasks, today's plan) over older activity. Cite the note numbers you used.
+If the notes don't answer the question, say "I couldn't find that in the work you can see" and suggest what
+they could ask instead. Never mention "notes", "sources" or "the data provided".
+Return JSON {{"segments": [{{"text": str, "cite": int or 0}}]}}: consecutive pieces of the answer, each with the
+number of the note that supports it (0 if none).
 Question: {question}
-Sources:
+Notes:
 {numbered}""")
     if out and out.get("segments"):
         segs = [{"text": s.get("text", ""), "cite": int(s.get("cite") or 0)} for s in out["segments"]]
+        for prev, seg in zip(segs, segs[1:]):  # Gemini sometimes drops the space between pieces
+            if prev["text"] and seg["text"] and not prev["text"][-1].isspace() and seg["text"][0].isalnum() \
+                    and prev["text"][-1] in ".!?;:,)":
+                seg["text"] = " " + seg["text"]
     else:
         segs = []
         for i, s in enumerate(sources[:3]):
