@@ -68,7 +68,7 @@ function Health({ t, onChanged }: { t: TeamH; onChanged: () => void }) {
   };
   return (
     <div className="flex flex-col gap-4">
-      <div className="card flex items-start gap-3 px-5 py-4">
+      <div data-tour="team-headline" className="card flex items-start gap-3 px-5 py-4">
         {t.by_ai ? <Sparkles size={18} className="mt-0.5 shrink-0 text-purple" aria-label="Written by Relay" /> : <HeartPulse size={18} className="mt-0.5 shrink-0 text-muted" />}
         <p className="text-[17px] font-semibold leading-snug tracking-[-0.014em]">{t.headline}</p>
       </div>
@@ -117,7 +117,7 @@ function Health({ t, onChanged }: { t: TeamH; onChanged: () => void }) {
                 </ul>
               </div>
               {p.action && (
-                <div className="mt-3.5 flex flex-wrap items-center gap-3 rounded-[14px] px-3.5 py-3 fill">
+                <div data-tour="team-action" className="mt-3.5 flex flex-wrap items-center gap-3 rounded-[14px] px-3.5 py-3 fill">
                   <Sparkles size={16} className="shrink-0 text-purple" aria-hidden />
                   <span className="min-w-[200px] flex-1 text-[14px]">{p.action.text}</span>
                   <AnimatePresence mode="wait">
@@ -150,7 +150,7 @@ function Standup({ teamId }: { teamId: number }) {
   if (error) return <ErrorNote message={error} />;
   if (!data) return <div className="flex justify-center py-16"><Spinner /></div>;
   return (
-    <div className="flex flex-col gap-4">
+    <div data-tour="standup" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <p className="flex flex-1 items-center gap-2 text-[14px] text-muted">
           {data.by_ai && <Sparkles size={15} className="text-purple" />}Written by Relay from logged work, so the {data.team.name} team can skip the daily meeting.

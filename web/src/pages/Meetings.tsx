@@ -126,7 +126,7 @@ function Result({ mt }: { mt: Meeting }) {
     return <div className="card flex items-start gap-3 px-5 py-4 text-[15px]"><CircleAlert size={18} className="mt-0.5 text-red" />{mt.error}</div>;
   const r = mt.result;
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="flex flex-col gap-4">
+    <motion.div data-tour="meeting-result" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="flex flex-col gap-4">
       <div className="card flex flex-col gap-2 px-5 py-[18px]">
         <span className="caption">{mt.file_name} · {timeAgo(mt.created_at)}</span>
         <h2 className="text-[24px] font-bold tracking-[-0.02em]">{mt.title}</h2>

@@ -97,7 +97,7 @@ function IncidentView({ id }: { id: number }) {
 
       <div className="flex flex-wrap items-start gap-6">
         <section className="flex min-w-0 flex-[1_1_440px] flex-col gap-5">
-          <div className="card px-[22px] pb-2 pt-[18px]">
+          <div data-tour="oncall-investigation" className="card px-[22px] pb-2 pt-[18px]">
             <div className="mb-2 flex items-center gap-2.5">
               <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#1D1D1F] text-white"><Bot size={16} /></span>
               <div className="flex flex-col leading-tight">
@@ -140,7 +140,7 @@ function IncidentView({ id }: { id: number }) {
           )}
 
           {fix.diff && (
-            <div className="card overflow-hidden">
+            <div data-tour="oncall-fix" className="card overflow-hidden">
               <div className="flex flex-wrap items-center gap-2.5 border-b border-line/[0.07] px-[18px] py-3.5">
                 <GitPullRequest size={18} aria-hidden />
                 <h3 className="text-[15px] font-semibold">{fixLabel} · {i.root_cause_title}</h3>

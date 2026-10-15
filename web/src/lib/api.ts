@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
+export const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
 const TOKEN_KEY = "relay.token";
 
 export function getToken(): string | null {

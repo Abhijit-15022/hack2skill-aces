@@ -1,8 +1,9 @@
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, PlayCircle } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Layout";
+import { useTour } from "../components/Tour";
 import { ErrorNote, spring } from "../components/ui";
 import { useSession } from "../lib/session";
 
@@ -18,6 +19,7 @@ const DEMO = [
 export default function Login() {
   const { signIn } = useSession();
   const nav = useNavigate();
+  const tour = useTour();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const go = async (e: string) => {
@@ -37,6 +39,14 @@ export default function Login() {
           <h1 className="text-[34px] font-bold tracking-[-0.03em]">Relay</h1>
           <p className="text-[16px] text-fg2">The task manager that updates itself.</p>
         </div>
+        <button onClick={tour.start} className="card flex items-center gap-3.5 px-4 py-3.5 text-left transition hover:shadow-lift active:scale-[0.99]">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white"><PlayCircle size={22} /></span>
+          <span className="flex flex-1 flex-col leading-tight">
+            <span className="text-[15px] font-semibold">Watch the demo</span>
+            <span className="text-[13px] text-muted">A guided three-minute tour. Relay clicks through and explains each part.</span>
+          </span>
+          <ArrowRight size={16} className="text-muted" />
+        </button>
         <form onSubmit={(e) => (e.preventDefault(), go(email))} className="flex gap-2">
           <label htmlFor="email" className="sr-only">Work email</label>
           <input id="email" type="email" className="input h-11 text-[15px]" placeholder="Work email" value={email} onChange={(e) => setEmail(e.target.value)} />

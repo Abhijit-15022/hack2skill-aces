@@ -29,7 +29,7 @@ export function ConnectedTools() {
   if (!data) return null;
   const d = data.devices[0];
   return (
-    <div className="card px-[18px] pb-4 pt-4">
+    <div data-tour="devices" className="card px-[18px] pb-4 pt-4">
       <div className="mb-2.5 flex items-center gap-2">
         <Plug size={16} aria-hidden /><h2 className="text-[15px] font-semibold">Connected tools</h2>
         {d && <span className={cn("ml-auto flex items-center gap-1.5 text-[12px]", d.online ? "text-green" : "text-muted")}>

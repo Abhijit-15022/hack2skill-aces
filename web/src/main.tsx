@@ -2,6 +2,7 @@ import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { TourProvider } from "./components/Tour";
 import { Spinner } from "./components/ui";
 import "./index.css";
 import { getToken } from "./lib/api";
@@ -28,6 +29,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <SessionProvider>
+        <TourProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<RequireAuth><Layout /></RequireAuth>}>
@@ -46,6 +48,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
+        </TourProvider>
       </SessionProvider>
     </BrowserRouter>
   </StrictMode>,

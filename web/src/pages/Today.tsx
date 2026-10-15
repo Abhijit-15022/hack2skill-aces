@@ -95,7 +95,7 @@ export default function Today() {
       <AnimatePresence>
         {f?.active && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={spring}
-            className="flex flex-wrap items-center gap-3 rounded-2xl bg-[#1D1D1F] px-5 py-3.5 text-white dark:bg-surface dark:text-fg">
+            data-tour="focus-banner" className="flex flex-wrap items-center gap-3 rounded-2xl bg-[#1D1D1F] px-5 py-3.5 text-white dark:bg-surface dark:text-fg">
             <BellOff size={20} aria-hidden />
             <span className="min-w-[220px] flex-1 text-[15px]"><strong className="font-semibold">In focus until {hm(f.ends_at!)}.</strong>{" "}
               {inbox.data!.held.length} notification{inbox.data!.held.length === 1 ? "" : "s"} held; only urgent ones come through.</span>
@@ -107,7 +107,7 @@ export default function Today() {
       </AnimatePresence>
 
       {questions.data && questions.data.questions.length > 0 && (
-        <section aria-label="Questions from Relay" className="flex flex-col gap-2.5">
+        <section data-tour="questions" aria-label="Questions from Relay" className="flex flex-col gap-2.5">
           {questions.data.questions.map((q) => <QuestionCard key={q.id} q={q} onDone={questions.refresh} />)}
         </section>
       )}
@@ -117,7 +117,7 @@ export default function Today() {
 
       {d && (
         <div className="flex flex-wrap items-start gap-6">
-          <section aria-label="Top three" className="flex min-w-0 flex-[1_1_560px] flex-col gap-3">
+          <section data-tour="plan" aria-label="Top three" className="flex min-w-0 flex-[1_1_560px] flex-col gap-3">
             {d.items.length === 0 && (
               <div className="card flex flex-col items-center gap-2 px-6 py-12 text-center">
                 <Check size={22} className="text-green" />
@@ -224,7 +224,7 @@ function Timeline({ events }: { events: Ev[] }) {
     return out;
   }, [events]);
   return (
-    <div className="card px-4 pb-4 pt-4">
+    <div data-tour="timeline" className="card px-4 pb-4 pt-4">
       <div className="mb-3 flex items-center justify-between px-1">
         <h2 className="text-[15px] font-semibold">Your day</h2>
         <span className="flex items-center gap-3 text-[12px] text-muted">
@@ -264,7 +264,7 @@ function Timeline({ events }: { events: Ev[] }) {
 
 function InboxCard({ inbox }: { inbox: Inbox }) {
   return (
-    <div className="card overflow-hidden">
+    <div data-tour="inbox" className="card overflow-hidden">
       <div className="flex items-center gap-2 px-[18px] pb-2 pt-4">
         <Bell size={16} aria-hidden /><h2 className="text-[15px] font-semibold">Notifications</h2>
         <span className="ml-auto text-[12px] text-muted">{inbox.stats.held_today} held today</span>

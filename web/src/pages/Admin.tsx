@@ -239,7 +239,7 @@ function Connections() {
   if (!data) return <Spinner />;
   const live = data.devices.filter((d) => d.online).length;
   return (
-    <div className="flex flex-col gap-4">
+    <div data-tour="connections" className="flex flex-col gap-4">
       <p className="text-[14px] text-fg2">
         relay-agent runs on each person's laptop, reads their AI coding sessions locally and reports here every few minutes.
         {" "}{data.devices.length} laptop{data.devices.length === 1 ? "" : "s"} connected, {live} live now.

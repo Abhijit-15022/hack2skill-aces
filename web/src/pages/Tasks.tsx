@@ -88,7 +88,7 @@ function TaskCard({ t, selected, onClick }: { t: any; selected: boolean; onClick
   const badge = TYPE_BADGE[t.type];
   const Icon = SOURCE_ICON[t.last_update?.source] ?? Sparkles;
   return (
-    <motion.button layout transition={spring} onClick={onClick} aria-pressed={selected}
+    <motion.button layout transition={spring} onClick={onClick} aria-pressed={selected} data-tour={t.blockers?.length > 0 ? "task-blocked" : undefined}
       className={cn("flex w-full flex-col gap-2 rounded-[14px] border bg-surface p-3.5 text-left shadow-card transition-[box-shadow,transform,border-color] duration-200 ease-apple hover:-translate-y-px hover:shadow-lift active:scale-[0.98]",
         selected ? "border-accent ring-[3px] ring-accent/20" : "border-line/[0.07]")}>
       <span className="flex items-center gap-1.5 text-[12px] font-medium text-muted">
@@ -159,7 +159,7 @@ function TaskPanel({ id, onChanged }: { id: number; onChanged: () => void }) {
           <Field label="Created by">{t.created_by ? t.created_by.name : "Relay, from email"}</Field>
           {t.project_id && <Field label="Project"><Link className="text-accent-ink" to={`/projects/${t.project_id}`}>Open project</Link></Field>}
         </dl>
-        <section className="flex flex-col gap-2">
+        <section data-tour="task-description" className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <h3 className="caption">Description</h3>
             {t.description_by_ai && <Badge tone="purple"><Sparkles size={11} fill="currentColor" />Written by Relay</Badge>}
@@ -169,7 +169,7 @@ function TaskPanel({ id, onChanged }: { id: number; onChanged: () => void }) {
         </section>
         <Outcome t={t} onSaved={setData} />
         {t.blockers.length > 0 && (
-          <section className="flex flex-col gap-2">
+          <section data-tour="task-blockers" className="flex flex-col gap-2">
             <h3 className="caption text-red">Blocked</h3>
             {t.blockers.map((b: any) => (
               <div key={b.id} className="flex items-start gap-3 rounded-xl bg-red/[0.07] px-3.5 py-3">
@@ -196,7 +196,7 @@ function TaskPanel({ id, onChanged }: { id: number; onChanged: () => void }) {
             </div>
           </section>
         )}
-        <section className="flex flex-col gap-2.5">
+        <section data-tour="task-timeline" className="flex flex-col gap-2.5">
           <h3 className="caption">Timeline</h3>
           <ol className="flex flex-col">
             {t.timeline.map((e: any, i: number) => {

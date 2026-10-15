@@ -1,10 +1,11 @@
-import { AudioLines, ClipboardList, FolderKanban, HeartPulse, Home, LogOut, Moon, Newspaper, Search, Settings2, SquareCheckBig, Sun, Sunrise, Zap } from "lucide-react";
+import { AudioLines, PlayCircle, ClipboardList, FolderKanban, HeartPulse, Home, LogOut, Moon, Newspaper, Search, Settings2, SquareCheckBig, Sun, Sunrise, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useApi } from "../lib/api";
 import { useSession } from "../lib/session";
 import { cn } from "../lib/utils";
 import { AskProvider, useAsk } from "./Ask";
+import { useTour } from "./Tour";
 import { Avatar, TeamDot } from "./ui";
 
 const NAV = [
@@ -31,6 +32,7 @@ export function Logo({ size = 30 }: { size?: number }) {
 function Sidebar() {
   const { me, teams, signOut, dark, setDark } = useSession();
   const ask = useAsk();
+  const tour = useTour();
   const { data: inc } = useApi<{ incidents: { status: string }[] }>("/incidents", 15000);
   const openIncident = inc?.incidents.some((i) => !["resolved"].includes(i.status));
   const myTeamIds = new Set(me?.teams.map((t) => t.id));
@@ -65,6 +67,9 @@ function Sidebar() {
         </NavLink>
       ))}
       <div className="min-h-6 flex-1" />
+      <button onClick={tour.start} className="mb-1 flex h-[34px] items-center gap-2.5 rounded-lg bg-accent/10 px-2.5 text-[14px] font-semibold text-accent-ink transition hover:bg-accent/[0.16] active:scale-[0.98]">
+        <PlayCircle size={18} strokeWidth={1.9} aria-hidden />Demo mode<span className="ml-auto text-[12px] font-medium opacity-70">3 min</span>
+      </button>
       {me?.user.is_org_admin && (
         <NavLink to="/admin" className={link}><Settings2 size={18} strokeWidth={1.8} aria-hidden />Admin</NavLink>
       )}

@@ -243,7 +243,13 @@ Code SessionEnd hook (`./hooks/install.sh claude`).
 
 ## Demo walkthrough
 
-Admin → **Demo** has a button for each step. About four minutes end to end.
+**Demo mode** does the walkthrough for you. Click *Watch the demo* on the sign-in page, or *Demo mode* in the sidebar.
+It signs in as Abhijit, Meera and Kavya in turn, opens each page, clicks like a person would, and highlights what to
+look at with a short explanation. It plays on its own in about 2½ minutes. Pause it to click around yourself, use ← →
+to step, and Esc to leave; Esc puts you back in the account you started from. Run `./scripts/seed-demo.sh --fresh --all`
+first so every step has something to show.
+
+To trigger each event live instead, Admin → **Demo** has a button for each step. About four minutes end to end.
 
 1. **Today, as Meera.** Her top 3 with reasons and estimates ("median of 5 similar tasks"), focus booked between her
    meetings, and *What you need* for each task.

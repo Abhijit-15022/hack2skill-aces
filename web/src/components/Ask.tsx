@@ -34,9 +34,18 @@ export function AskProvider({ children }: { children: ReactNode }) {
         setOpen((o) => !o);
       }
     };
+    // Demo mode opens and closes Ask from outside the layout.
+    const onAsk = (e: Event) => openAsk((e as CustomEvent<string>).detail);
+    const onClose = () => setOpen(false);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    window.addEventListener("relay:ask", onAsk);
+    window.addEventListener("relay:ask-close", onClose);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("relay:ask", onAsk);
+      window.removeEventListener("relay:ask-close", onClose);
+    };
+  }, [openAsk]);
 
   return (
     <AskCtx.Provider value={openAsk}>
@@ -84,7 +93,7 @@ function AskPanel({ seed, onNavigate }: { seed?: string; onNavigate: () => void 
   };
 
   return (
-    <div>
+    <div data-tour="ask">
       <form onSubmit={(e) => (e.preventDefault(), ask(q))} className="flex items-center gap-3 border-b border-line/[0.07] px-5 py-4">
         <Sparkles size={22} className="shrink-0 text-purple" aria-hidden />
         <label htmlFor="ask-input" className="sr-only">Ask a question</label>
