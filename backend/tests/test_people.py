@@ -29,7 +29,9 @@ def test_my_day_picks_three_with_estimates_and_context(meera):
     assert any(c["kind"] == "email" for i in day["items"] for c in i["context"]), "requests should carry their email"
     booked = [i for i in day["items"] if i["focus_start"]]
     assert day["focus_minutes"] == sum(i["estimate_min"] for i in booked)
-    focus_events = [e for e in day["calendar"] if e["kind"] == "focus" and e["source"] == "relay"]
+    planned = {(i["task_id"], i["focus_start"][:16]) for i in booked}
+    focus_events = [e for e in day["calendar"] if e["kind"] == "focus" and e["source"] == "relay"
+                    and (e["task_id"], e["start"][:16]) in planned]
     assert len(focus_events) == len(booked)
     for ev in focus_events:
         meetings = [e for e in day["calendar"] if e["kind"] == "meeting"]
@@ -85,3 +87,22 @@ def test_sample_meeting_becomes_decisions_and_tasks(kavya):
     assert r["decisions"], "the recording contains two explicit decisions"
     touched = [(c["title"], c.get("owner")) for c in r["created"]] + [(u["title"], None) for u in r["updated"]]
     assert any("schema" in title.lower() for title, _ in touched), touched
+
+
+def test_ai_session_becomes_new_task_with_blocker_and_outcome_question(kavya):
+    r = kavya.post("/demo/signal/session").json()["result"]
+    assert r["blockers"], "the session hits a permission error"
+    abhijit = login("abhijit@acme.test")
+    task = abhijit.get(f"/tasks/{r['task_id']}").json()
+    assert "revenue" in task["title"].lower() and task["assignee"]["name"] == "Abhijit Singh"
+    assert task["blockers"] and task["blockers"][0]["source"] == "cursor"
+    qs = abhijit.get("/me/questions").json()["questions"]
+    q = next(q for q in qs if q["task_id"] == r["task_id"])
+    assert q["suggestion"]
+    after = abhijit.post(f"/tasks/{r['task_id']}/outcome", json={"text": q["suggestion"]}).json()
+    assert after["expected_outcome"] == q["suggestion"]
+    assert all(x["task_id"] != r["task_id"] for x in abhijit.get("/me/questions").json()["questions"])
+    resolved = abhijit.post(f"/tasks/{r['task_id']}/blockers/{task['blockers'][0]['id']}/resolve").json()
+    assert not resolved["blockers"] and resolved["resolved_blockers"]
+    again = kavya.post("/demo/signal/session").json()["result"]
+    assert again["task_id"] == r["task_id"], "the same session must update the same task"

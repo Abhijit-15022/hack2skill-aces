@@ -29,8 +29,9 @@ def free_slots(db: Session, user_id: int, day: date, from_time: datetime | None 
     if from_time and from_time > start:
         start = from_time.replace(second=0, microsecond=0)
         start += timedelta(minutes=(5 - start.minute % 5) % 5)
+    # Planned focus blocks that haven't started are about to be re-planned; anything already under way stays busy.
     busy = [(e.start, e.end) for e in events(db, user_id, day)
-            if not (ignore_relay_focus and e.kind == "focus" and e.source == "relay")]
+            if not (ignore_relay_focus and e.kind == "focus" and e.source == "relay" and e.start >= now())]
     slots, cursor = [], start
     for b_start, b_end in sorted(busy):
         if b_start > cursor and (b_start - cursor) >= timedelta(minutes=25):

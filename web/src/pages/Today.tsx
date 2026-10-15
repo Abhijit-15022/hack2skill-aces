@@ -14,6 +14,7 @@ type Item = { rank: number; task_id: number; key: string; title: string; type: s
 type Ev = { id: number; title: string; start: string; end: string; kind: string; source: string; task_id: number | null };
 type Day = { day: string; summary: string; focus_minutes: number; by_ai: boolean; items: Item[]; calendar: Ev[]; meeting_minutes: number; generated_at: string };
 type Note = { id: number; kind: string; title: string; body: string; urgent: boolean; why: string; status: string; created_at: string; task_id: number | null };
+type Question = { id: number; task_id: number; key: string; title: string; question: string; suggestion: string; asked_at: string };
 type Inbox = { focus: { active: boolean; ends_at: string | null; title: string | null; task_id: number | null }; held: Note[]; delivered: Note[];
   stats: { held_today: number; let_through_today: number } };
 
@@ -32,6 +33,7 @@ export default function Today() {
   const { me } = useSession();
   const day = useApi<Day>("/me/day");
   const inbox = useApi<Inbox>("/me/notifications", 10000);
+  const questions = useApi<{ questions: Question[] }>("/me/questions", 15000);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -102,6 +104,12 @@ export default function Today() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {questions.data && questions.data.questions.length > 0 && (
+        <section aria-label="Questions from Relay" className="flex flex-col gap-2.5">
+          {questions.data.questions.map((q) => <QuestionCard key={q.id} q={q} onDone={questions.refresh} />)}
+        </section>
+      )}
 
       {(day.error || err) && <ErrorNote message={(day.error || err)!} />}
       {!d && !day.error && <div className="flex flex-col items-center gap-3 py-16 text-muted"><Spinner /><span className="text-[14px]">Relay is planning your day…</span></div>}
@@ -282,5 +290,37 @@ function InboxCard({ inbox }: { inbox: Inbox }) {
         {inbox.delivered.length === 0 && inbox.held.length === 0 && <li className="px-[18px] pb-4 text-[13.5px] text-muted">Nothing new.</li>}
       </ul>
     </div>
+  );
+}
+
+function QuestionCard({ q, onDone }: { q: Question; onDone: () => void }) {
+  const [text, setText] = useState(q.suggestion);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!text.trim()) return;
+    setBusy(true);
+    try {
+      await api(`/tasks/${q.task_id}/outcome`, { body: { text } });
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <motion.div layout initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={spring}
+      className="card flex flex-col gap-3 border-accent/30 px-5 py-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Sparkles size={16} className="text-purple" aria-hidden />
+        <span className="caption text-accent-ink">Relay needs one answer</span>
+        <span className="text-[12.5px] text-muted">{q.key}</span>
+      </div>
+      <p className="text-[17px] font-semibold leading-snug tracking-[-0.014em]">{q.question}</p>
+      <label htmlFor={`q-${q.id}`} className="sr-only">Expected outcome</label>
+      <textarea id={`q-${q.id}`} rows={2} className="input h-auto py-2.5 text-[15px]" value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="flex flex-wrap items-center gap-2">
+        <button className="btn btn-primary" disabled={busy || !text.trim()} onClick={save}>{text === q.suggestion ? "Use this" : "Save"}</button>
+        <span className="text-[12.5px] text-muted">{text === q.suggestion ? "Suggested by Relay from your session. Edit it if it's off." : "Your manager sees this as the goal."}</span>
+      </div>
+    </motion.div>
   );
 }

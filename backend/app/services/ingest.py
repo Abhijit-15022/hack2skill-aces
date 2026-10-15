@@ -103,38 +103,15 @@ Next steps: {"; ".join(next_steps) or "unknown"}""")
 
 
 def ingest_claude(db: Session, org_id: int, p: dict) -> dict:
-    user = _user(db, p.get("user_email"))
+    """Claude Code SessionEnd hook payload (raw JSONL transcript) -> the shared session pipeline."""
+    from .sessions import ingest_session
+
     text, files = transcript_text(p.get("transcript") or "")
-    files = list(dict.fromkeys(files + list(p.get("files") or [])))
-    if not text.strip():
-        return {"skipped": "empty transcript"}
-    text, redactions = redact(text)
-    s = _summarise_session(text, files, p.get("git_branch"))
-    task, score, why = match_task(db, user, f"{s['title']}\n{s['summary']}", hints=[p.get("git_branch") or "", text[:2000]])
-    created = False
-    if task is None:
-        task = create_task(db, org_id, title=s["title"], team=_home_team(db, user), created_by=user,
-                           assignee_id=user.id, status="doing", description=s["summary"], description_by_ai=True)
-        created, why = True, "new work"
-    else:
-        task.description = _merge_description(task, s["summary"], s.get("next_steps") or [])
-        task.description_by_ai = True
-        if task.status == "todo":
-            task.status = "doing"
-        if s.get("progress") == "done" and task.status == "doing":
-            task.status = "review"
-        refresh_task_embedding(task)
-    log = add_log(db, org_id, source="claude", summary=s["summary"], task=task, author=user,
-                  raw_ref=p.get("session_id"),
-                  meta={"files": files[:50], "decisions": s.get("decisions") or [], "branch": p.get("git_branch"),
-                        "redactions": redactions, "matched": why})
-    for d in (s.get("decisions") or [])[:2]:
-        feed(db, org_id, kind="decision", team_id=task.team_id, task_id=task.id, subject_user_id=user.id,
-             title=d[:140], body=f"Captured from {user.name.split()[0]}'s Claude session on {task.key}.",
-             sources=["Claude session", task.key], score=0.4)
-    audit(db, org_id, actor=None, action=f"{'Created' if created else 'Updated'} {task.key} from a Claude session",
-          target_type="task", target_id=task.id, reason=why, approved_by="Automatic (task update)")
-    return {"task": task.key, "created": created, "matched": why, "redactions": redactions, "log_id": log.id}
+    return ingest_session(db, org_id, {
+        "tool": "claude", "session_id": f"claude:{p.get('session_id') or ''}" if p.get("session_id") else None,
+        "title": next((ln[6:80] for ln in text.splitlines() if ln.startswith("user: ")), "Claude Code session"),
+        "user_email": p.get("user_email"), "git_branch": p.get("git_branch"), "repo": p.get("repo"),
+        "files": list(dict.fromkeys(files + list(p.get("files") or []))), "transcript": text})
 
 
 # ---------------------------------------------------------------- git commits

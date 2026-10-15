@@ -1,7 +1,8 @@
 #!/bin/sh
 # Install Relay's hooks.
 #   ./hooks/install.sh git /path/to/repo   -> git post-commit hook in that repo
-#   ./hooks/install.sh claude              -> prints the Claude Code settings.json snippet
+#   ./hooks/install.sh agent               -> relay-agent: Claude Code, Cursor, Codex, Antigravity (recommended)
+#   ./hooks/install.sh claude              -> prints the Claude Code settings.json snippet (Claude only)
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -21,6 +22,11 @@ case "$1" in
     chmod +x "$TARGET"
     echo "Installed $TARGET. Export RELAY_URL and RELAY_INGEST_TOKEN in your shell."
     ;;
+  agent)
+    python3 "$HERE/../agent/relay_agent.py" scan --since 2d
+    echo
+    echo "Looks right? Run: python3 $HERE/../agent/relay_agent.py install   (needs RELAY_URL, RELAY_INGEST_TOKEN, RELAY_USER_EMAIL)"
+    ;;
   claude)
     chmod +x "$HERE/claude/relay_session_end.py"
     cat <<EOF
@@ -38,5 +44,5 @@ Then export RELAY_URL, RELAY_INGEST_TOKEN (and RELAY_USER_EMAIL if your git emai
 EOF
     ;;
   *)
-    echo "usage: $0 git [repo] | claude"; exit 1 ;;
+    echo "usage: $0 agent | git [repo] | claude"; exit 1 ;;
 esac

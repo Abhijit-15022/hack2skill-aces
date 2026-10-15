@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CalendarClock, Check, Clock, HeartPulse, Lock, MessageSquareQuote, Moon, RefreshCw, Sparkles, UserRoundCheck } from "lucide-react";
+import { AlertTriangle, Ban, CalendarClock, Check, Clock, HeartPulse, Lock, MessageSquareQuote, Moon, RefreshCw, Sparkles, UserRoundCheck } from "lucide-react";
 import { useState } from "react";
 import { Page } from "../components/Layout";
 import { Avatar, Badge, Empty, ErrorNote, PageHeader, Segmented, Spinner, spring, TeamDot } from "../components/ui";
@@ -9,12 +9,12 @@ import { cn, firstName } from "../lib/utils";
 type Signal = { kind: string; level: string; text: string; task_id?: number };
 type Person = { user: { id: number; name: string; initials: string; color: string; title: string; shares_wellbeing: boolean; kind?: string };
   level: "high" | "watch" | "ok"; open_tasks: number; requests: number; overdue: number; committed_min: number; capacity_min: number; load: number;
-  after_hours_nights: number | null; signals: Signal[]; action: null | { type: string; task_id: number; to_user_id: number | null; label: string; text: string } };
+  after_hours_nights: number | null; signals: Signal[]; summary: string | null; action: null | { type: string; task_id: number; to_user_id: number | null; label: string; text: string } };
 type TeamH = { team: { id: number; name: string; color: string; short: string }; headline: string; by_ai: boolean; people: Person[] };
 
 const LEVEL = { high: { label: "Needs help", tone: "red" as const, icon: AlertTriangle }, watch: { label: "Watch", tone: "orange" as const, icon: Clock },
   ok: { label: "OK", tone: "green" as const, icon: Check } };
-const SIGNAL_ICON: Record<string, any> = { overload: HeartPulse, after_hours: Moon, review_stuck: UserRoundCheck, no_feedback: MessageSquareQuote, overdue: CalendarClock };
+const SIGNAL_ICON: Record<string, any> = { blocked: Ban, overload: HeartPulse, after_hours: Moon, review_stuck: UserRoundCheck, no_feedback: MessageSquareQuote, overdue: CalendarClock };
 const h = (m: number) => `${Math.round(m / 60)} h`;
 
 export default function Team() {
@@ -86,6 +86,11 @@ function Health({ t, onChanged }: { t: TeamH; onChanged: () => void }) {
                 </div>
                 <Badge tone={L.tone} className="h-6 px-2.5 text-[12.5px]"><L.icon size={13} />{L.label}</Badge>
               </div>
+              {p.summary && (
+                <p className="mt-3 flex items-start gap-2 text-[15px] leading-relaxed text-fg">
+                  <Sparkles size={15} className="mt-[4px] shrink-0 text-purple" aria-label="Summary by Relay" />{p.summary}
+                </p>
+              )}
               <div className="mt-3.5 grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between text-[12.5px] text-muted"><span>Booked this week</span><span className="tabular-nums">{h(p.committed_min)} of {h(p.capacity_min)} free</span></div>

@@ -52,9 +52,23 @@ def match_task(db: Session, user: m.User, text: str, hints: list[str] = ()) -> t
         scored.append((score, t))
     scored.sort(key=lambda x: x[0], reverse=True)
     best_score, best = scored[0]
-    if best_score >= _threshold():
-        return best, best_score, f"similar to {best.key} ({best_score:.2f})"
-    return None, best_score, "no close match"
+    if best_score < _threshold():
+        return None, best_score, "no close match"
+    if llm.enabled():
+        # Related topics embed close together; let the model decide between "continues a task" and "new work".
+        shortlist = [t for sc, t in scored[:3] if sc >= _threshold()]
+        out = llm.generate_json(f"""A developer just did this work:
+{text[:1500]}
+Their open tasks: {[{"key": t.key, "title": t.title, "description": (t.description or "")[:300]} for t in shortlist]}
+Is this work clearly a continuation of one of these tasks (same deliverable), or separate new work?
+Return JSON {{"key": str or null, "why": str (max 12 words)}}. Use null unless it is clearly the same deliverable.""",
+                                tier="lite")
+        if out is not None:
+            chosen = next((t for t in shortlist if t.key == out.get("key")), None)
+            if chosen is None:
+                return None, best_score, f"new work ({out.get('why') or 'not the same deliverable'})"
+            return chosen, best_score, f"continues {chosen.key}: {out.get('why') or 'same deliverable'}"
+    return best, best_score, f"similar to {best.key} ({best_score:.2f})"
 
 
 def route_team(db: Session, text: str) -> tuple[m.Team | None, float]:

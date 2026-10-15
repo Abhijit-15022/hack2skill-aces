@@ -28,6 +28,9 @@ def task(db: Session, t: m.Task, detail: bool = False) -> dict:
         "created_by": user(db.get(m.User, t.created_by_id)) if t.created_by_id else None,
         "project_id": t.project_id, "parent_id": t.parent_id, "due_at": t.due_at, "created_at": t.created_at,
         "updated_at": t.updated_at, "closed_at": t.closed_at, "links": t.links or [],
+        "expected_outcome": t.expected_outcome, "outcome_by_ai": t.outcome_by_ai,
+        "blockers": [b for b in (t.blockers or []) if not b.get("resolved_at")],
+        "resolved_blockers": [b for b in (t.blockers or []) if b.get("resolved_at")],
     }
     last = db.scalar(select(m.WorkLog).where(m.WorkLog.task_id == t.id).order_by(m.WorkLog.created_at.desc()).limit(1))
     out["last_update"] = {"source": last.source, "at": last.created_at} if last else None

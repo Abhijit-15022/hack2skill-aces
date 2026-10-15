@@ -13,7 +13,9 @@ Tech teams also get an on-call agent that diagnoses pipeline failures and raises
 | Notifications and interruptions | **Focus Guard**: non-urgent pings wait until the focus block ends; Gemini decides what's urgent enough to come through |
 | Meetings eat focus time | **Written standup** from logged work; **meeting recordings** become decisions, tasks and hand-overs |
 | Overload, burnout, uneven workload, late feedback | **Team Health**: overload, after-hours work (only with consent), stuck reviews, missing early feedback, each with one suggested action |
-| Work nobody updates; searching emails and drives | Self-updating tasks (Claude, git, email, calendar) and **Ask** (⌘K) with citations |
+| Work nobody updates | **relay-agent** reads recent sessions from **Claude Code, Cursor, Codex and Antigravity**; Gemini updates the task with what was done, **blockers** (and who it's waiting on) and the **expected outcome**, asking the person once when the goal isn't clear. Plus git, email and calendar |
+| Managers can't see progress or blockers | Per-person **AI summary** on Team: working towards, how far along, what's blocking; one-tap "ask X to unblock" |
+| Searching emails and drives | **Ask** (⌘K) with citations |
 | Tool and pipeline failures | **On-call agent**: failure → investigation → fix → review task → rerun → closed |
 | Repeatable processes | **SOP builder**; projects whose steps tick themselves off from evidence; outdated-SOP detection |
 
@@ -57,13 +59,16 @@ Admin → **Demo** has a button for each step.
 2. **Focus Guard:** press *Meera starts focusing, 5 pings arrive*. Four wait; only the pipeline failure gets through.
 3. **Team (as Kavya):** Meera is overloaded with late nights; Rohan's review has waited 30 h; Abhijit's refactor has
    had no feedback. One tap applies each suggestion. Switch to *Written standup*: no daily meeting needed.
-4. **Meetings:** process the 64-second sample. Gemini finds the decisions (with timestamps), creates "schema change
+4. **AI sessions:** press *Abhijit's Cursor session hits a blocker*. Relay creates "Build weekly revenue rollup",
+   marks it **Blocked** (waiting on Meera for finance.refunds access), tells Rohan, and on Abhijit's Today asks
+   "What should this achieve when it's done?" with a suggested answer. Team shows the AI summary and *Ask Meera to unblock*.
+5. **Meetings:** process the 64-second sample. Gemini finds the decisions (with timestamps), creates "schema change
    check" for Abhijit due Friday, and hands the GST request from Meera to Ananya.
-5. **Break the pipeline:** the on-call agent reads the error, traces lineage, finds the change in DP-1 (from
+6. **Break the pipeline:** the on-call agent reads the error, traces lineage, finds the change in DP-1 (from
    Abhijit's Claude session), recalls INC-031 and drafts a one-line fix with a review task for Rohan. Approve →
    rerun → green.
-6. **⌘K Ask** "Why did we change the orders model?" → answer with numbered sources.
-7. Sign in as **Grace (Globex)**: a different company sees none of Acme's data (Postgres row-level security).
+7. **⌘K Ask** "Why did we change the orders model?" → answer with numbered sources.
+8. Sign in as **Grace (Globex)**: a different company sees none of Acme's data (Postgres row-level security).
 
 ## Architecture
 
@@ -99,6 +104,17 @@ PROJECT=your-project-id ./deploy/gcp-vm.sh     # one e2-standard-4 VM in asia-so
 
 The VM's service account can call Vertex AI, so set `GOOGLE_CLOUD_PROJECT` in `.env` instead of an API key.
 Scaling path: Cloud SQL (Postgres + pgvector), API/worker on Cloud Run behind Pub/Sub, Identity Platform sign-in.
+
+## relay-agent: updates from every AI coding tool
+
+```bash
+export RELAY_URL=http://localhost:8000 RELAY_INGEST_TOKEN=<from .env> RELAY_USER_EMAIL=abhijit@acme.test
+python3 agent/relay_agent.py scan --since 2d    # what it can see; sends nothing
+python3 agent/relay_agent.py watch              # sync every 5 minutes (or `install` to start at login on macOS)
+```
+
+Secrets are removed on your machine before anything is sent. Details and per-tool storage: [`agent/README.md`](agent/README.md).
+Demo without the agent: Admin → Demo → *Abhijit's Cursor session hits a blocker*.
 
 ## Hooks for real use
 

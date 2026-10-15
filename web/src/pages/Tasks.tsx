@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Bot, GitCommitHorizontal, Mail, MessageSquareText, Plus, Sparkles, Terminal, CalendarDays, ClipboardList, Zap, PenLine } from "lucide-react";
+import { AudioLines, Ban, Bot, Check, GitCommitHorizontal, Mail, MessageSquareText, Plus, Sparkles, Target, Terminal, CalendarDays, ClipboardList, Zap, PenLine } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAsk } from "../components/Ask";
@@ -18,7 +18,7 @@ const COLUMNS = [
 const TYPE_BADGE: Record<string, [string, any]> = {
   incident: ["Failure", "red"], review: ["Review", "blue"], request: ["Email request", "orange"], sop_step: ["SOP step", "green"],
 };
-const SOURCE_ICON: Record<string, any> = { claude: Terminal, git: GitCommitHorizontal, email: Mail, calendar: CalendarDays, oncall: Bot, sop: ClipboardList, manual: PenLine, kestra: Zap };
+const SOURCE_ICON: Record<string, any> = { cursor: Terminal, codex: Terminal, antigravity: Terminal, meeting: AudioLines, claude: Terminal, git: GitCommitHorizontal, email: Mail, calendar: CalendarDays, oncall: Bot, sop: ClipboardList, manual: PenLine, kestra: Zap };
 
 export default function Tasks() {
   const [params, setParams] = useSearchParams();
@@ -95,8 +95,9 @@ function TaskCard({ t, selected, onClick }: { t: any; selected: boolean; onClick
         <TeamDot color={t.team?.color} />{t.team?.name ?? "No team"}<span className="ml-auto">{t.key}</span>
       </span>
       <span className="text-[14.5px] font-semibold leading-snug tracking-[-0.012em]">{t.title}</span>
-      {(badge || t.due_at || t.description_by_ai) && (
+      {(badge || t.due_at || t.description_by_ai || t.blockers?.length > 0) && (
         <span className="flex flex-wrap gap-1">
+          {t.blockers?.length > 0 && <Badge tone="red"><Ban size={11} />Blocked</Badge>}
           {badge && <Badge tone={badge[1]}>{badge[0]}</Badge>}
           {t.created_by?.kind === "agent" && <Badge tone="purple">Created by AI</Badge>}
           {t.due_at && t.status !== "done" && <Badge tone={new Date(t.due_at) < new Date() ? "orange" : "gray"}>{dueLabel(t.due_at)}</Badge>}
@@ -166,6 +167,24 @@ function TaskPanel({ id, onChanged }: { id: number; onChanged: () => void }) {
           <p className="whitespace-pre-line text-[14.5px] leading-relaxed text-fg2">{t.description || "No description yet. Relay fills this in from the work it sees."}</p>
           {t.description_by_ai && <p className="text-[12.5px] text-muted">From {sources || 1} source{sources === 1 ? "" : "s"} · updated {timeAgo(t.updated_at)}</p>}
         </section>
+        <Outcome t={t} onSaved={setData} />
+        {t.blockers.length > 0 && (
+          <section className="flex flex-col gap-2">
+            <h3 className="caption text-red">Blocked</h3>
+            {t.blockers.map((b: any) => (
+              <div key={b.id} className="flex items-start gap-3 rounded-xl bg-red/[0.07] px-3.5 py-3">
+                <Ban size={16} className="mt-0.5 shrink-0 text-red" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] leading-snug">{b.text}</p>
+                  <p className="mt-0.5 text-[12px] text-muted">{b.waiting_on ? `Waiting on ${b.waiting_on} · ` : ""}from {SOURCE_LABEL[b.source] ?? b.source} · {timeAgo(b.at)}</p>
+                </div>
+                <button className="btn btn-secondary btn-sm" onClick={async () => setData(await api(`/tasks/${id}/blockers/${b.id}/resolve`, { body: {} }))}>
+                  <Check size={13} />Resolved
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
         {(t.links?.length > 0 || t.children?.length > 0) && (
           <section className="flex flex-col gap-2">
             <h3 className="caption">Linked</h3>
@@ -260,5 +279,35 @@ function NewTask({ open, onClose, onCreated }: { open: boolean; onClose: () => v
         </div>
       </form>
     </Dialog>
+  );
+}
+
+function Outcome({ t, onSaved }: { t: any; onSaved: (d: any) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(t.expected_outcome ?? "");
+  const save = async () => {
+    if (!text.trim()) return;
+    onSaved(await api(`/tasks/${t.id}/outcome`, { body: { text } }));
+    setEditing(false);
+  };
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h3 className="caption">Expected outcome</h3>
+        {t.outcome_by_ai && <Badge tone="purple"><Sparkles size={11} fill="currentColor" />From the session</Badge>}
+        {!editing && <button className="btn btn-ghost btn-sm ml-auto" onClick={() => (setText(t.expected_outcome ?? ""), setEditing(true))}>{t.expected_outcome ? "Edit" : "Add"}</button>}
+      </div>
+      {editing ? (
+        <div className="flex flex-col gap-2">
+          <label htmlFor="outcome" className="sr-only">Expected outcome</label>
+          <textarea id="outcome" rows={2} className="input h-auto py-2" placeholder="What does done look like?" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+          <div className="flex gap-2"><button className="btn btn-primary btn-sm" onClick={save}>Save</button><button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button></div>
+        </div>
+      ) : t.expected_outcome ? (
+        <p className="flex items-start gap-2 text-[14.5px] leading-relaxed text-fg2"><Target size={16} className="mt-[3px] shrink-0 text-accent-ink" aria-hidden />{t.expected_outcome}</p>
+      ) : (
+        <p className="text-[14px] text-muted">Not set yet. Relay asks the assignee once, when the goal isn't clear from their work.</p>
+      )}
+    </section>
   );
 }

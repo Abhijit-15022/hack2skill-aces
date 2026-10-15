@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 from .. import models as m
 from .. import serialize as ser
 from ..auth import Ctx, ctx
+from ..services import sessions
 from ..services import sop as sop_svc
 from ..services.core import add_log, audit, create_task, refresh_task_embedding, set_status, user_teams
 
@@ -117,6 +118,35 @@ def update_task(task_id: int, body: TaskPatch, c: Ctx = Depends(ctx)):
     if {"title", "description"} & changes.keys():
         refresh_task_embedding(task)
     return ser.task(c.db, task, detail=True)
+
+
+class OutcomeIn(BaseModel):
+    text: str
+
+
+@router.post("/tasks/{task_id}/outcome")
+def set_outcome(task_id: int, body: OutcomeIn, c: Ctx = Depends(ctx)):
+    task = c.db.get(m.Task, task_id)
+    if not task:
+        raise HTTPException(404, "No such task.")
+    if not body.text.strip():
+        raise HTTPException(422, "Describe what done looks like.")
+    sessions.set_outcome(c.db, task, c.user, body.text)
+    return ser.task(c.db, task, detail=True)
+
+
+@router.post("/tasks/{task_id}/blockers/{blocker_id}/resolve")
+def resolve_blocker(task_id: int, blocker_id: str, c: Ctx = Depends(ctx)):
+    task = c.db.get(m.Task, task_id)
+    if not task:
+        raise HTTPException(404, "No such task.")
+    sessions.resolve_blocker(c.db, task, c.user, blocker_id)
+    return ser.task(c.db, task, detail=True)
+
+
+@router.get("/me/questions")
+def my_questions(c: Ctx = Depends(ctx)):
+    return {"questions": sessions.questions(c.db, c.user)}
 
 
 class CommentIn(BaseModel):

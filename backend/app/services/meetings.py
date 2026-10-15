@@ -43,9 +43,13 @@ def standup(db: Session, team: m.Team, refresh: bool = False) -> m.Standup:
                    if t.due_at and t.due_at < now()]
         waiting = db.scalars(select(m.Task).where(m.Task.created_by_id == u.id, m.Task.type == "review",
                                                   m.Task.status != "done")).all()
+        open_blockers = [f"{t.key}: {b['text']}" + (f" (waiting on {b['waiting_on']})" if b.get("waiting_on") else "")
+                         for t in db.scalars(select(m.Task).where(m.Task.assignee_id == u.id, m.Task.status != "done"))
+                         for b in (t.blockers or []) if not b.get("resolved_at")]
         raw.append({"user": u, "yesterday": [f"{lg.summary}" for lg in logs][-6:] + [f"Closed {t.key} {t.title}" for t in closed][:4],
                     "today": [i["title"] for i in plan.items] if plan else [t.title for t in doing][:3],
-                    "blocked": [f"{t.key} {t.title} is overdue" for t in blocked][:2] + [f"waiting on review of {t.key}" for t in waiting][:2]})
+                    "blocked": open_blockers[:3] + [f"{t.key} {t.title} is overdue" for t in blocked][:2]
+                               + [f"waiting on review of {t.key}" for t in waiting][:2]})
     out = llm.generate_json(f"""Write today's async standup for the {team.name} team from what each person actually
 logged. For each person: up to 2 short bullet points for yesterday (past tense, concrete, no filler), up to 2
 for today, and blockers (empty list if none). Never invent work that isn't in the data.

@@ -1,5 +1,8 @@
-"""Team Health: spot overload, after-hours work, stuck reviews and missing early feedback; suggest one action."""
-from datetime import timedelta
+"""Team Health: spot overload, after-hours work, blockers, stuck reviews and missing early feedback; suggest one action."""
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -65,14 +68,24 @@ def person(db: Session, user: m.User, teammates: list[m.User]) -> dict:
                         "text": f"{t.key} “{t.title}”: {int((t_now - t.created_at).days)} days in, no feedback from anyone yet"})
     for t in overdue[:2]:
         signals.append({"kind": "overdue", "level": "watch", "task_id": t.id, "text": f"{t.key} is overdue"})
+    blocked = [(t, b) for t in open_tasks for b in (t.blockers or []) if not b.get("resolved_at")]
+    for t, b in blocked[:3]:
+        age_h = (t_now - datetime.fromisoformat(b["at"])).total_seconds() / 3600 if b.get("at") else 0
+        signals.append({"kind": "blocked", "level": "high" if age_h >= 24 else "watch", "task_id": t.id, "blocker_id": b["id"],
+                        "waiting_on": b.get("waiting_on"),
+                        "text": f"Blocked on {t.key}: {b['text']}" + (f" (waiting on {b['waiting_on']})" if b.get("waiting_on") else "")})
     level = "high" if any(s["level"] == "high" for s in signals) else "watch" if signals else "ok"
 
     action = _suggest(db, user, signals, open_tasks, requests, reviews, quiet, teammates) if level != "ok" else None
+    working = [{"key": t.key, "title": t.title, "status": t.status, "outcome": t.expected_outcome,
+                "last": (db.scalar(select(m.WorkLog.summary).where(m.WorkLog.task_id == t.id, m.WorkLog.author_id == user.id)
+                                   .order_by(m.WorkLog.created_at.desc()).limit(1)) or "")[:200]}
+               for t in sorted(open_tasks, key=lambda t: (t.status != "doing", t.status != "review"))[:4]]
     return {"user": {"id": user.id, "name": user.name, "initials": user.initials, "color": user.color, "title": user.title,
                      "shares_wellbeing": user.share_wellbeing},
             "level": level, "open_tasks": len(open_tasks), "requests": len(requests), "overdue": len(overdue),
             "committed_min": committed, "capacity_min": capacity, "load": round(load, 2),
-            "after_hours_nights": nights, "signals": signals, "action": action}
+            "after_hours_nights": nights, "signals": signals, "action": action, "working_on": working, "summary": None}
 
 
 def _least_loaded(db: Session, teammates: list[m.User], exclude: int) -> m.User | None:
@@ -83,8 +96,24 @@ def _least_loaded(db: Session, teammates: list[m.User], exclude: int) -> m.User 
                                                                          m.Task.status != "done")).all()))
 
 
+def _person_named(db: Session, text: str | None) -> m.User | None:
+    if not text:
+        return None
+    for u in db.scalars(select(m.User).where(m.User.kind == "human")):
+        if u.name.lower() in text.lower() or re.search(rf"\b{re.escape(u.name.split()[0])}\b", text, re.I):
+            return u
+    return None
+
+
 def _suggest(db, user, signals, open_tasks, requests, reviews, quiet, teammates) -> dict | None:
     kinds = {s["kind"] for s in signals}
+    for s in signals:
+        if s["kind"] == "blocked" and s["level"] == "high" or s["kind"] == "blocked" and "overload" not in kinds:
+            who = _person_named(db, s.get("waiting_on"))
+            if who and who.id != user.id:
+                return {"type": "unblock", "task_id": s["task_id"], "to_user_id": who.id,
+                        "label": f"Ask {who.name.split()[0]} to unblock",
+                        "text": f"{user.name.split()[0]} is waiting on {who.name.split()[0]}: {s['text'].split(': ', 1)[-1]}"}
     if "overload" in kinds or "after_hours" in kinds:
         movable = sorted(requests or open_tasks, key=lambda t: (t.priority == "high", t.due_at is not None))
         to = _least_loaded(db, teammates, user.id)
@@ -107,17 +136,32 @@ def _suggest(db, user, signals, open_tasks, requests, reviews, quiet, teammates)
 
 
 def explain(team: m.Team, people: list[dict]) -> dict:
+    """A headline for the team and one AI summary per person: working towards, progress, blocked by."""
     risky = [p for p in people if p["level"] != "ok"]
-    if not risky:
-        return {"headline": f"{team.name} looks healthy this week.", "by_ai": False}
-    out = llm.generate_json(f"""You help a manager look after the {team.name} team. Write a calm, specific headline
-(max 16 words) about who needs help this week and why. No blame, no drama.
-People with signals: {[{"name": p["user"]["name"], "signals": [s["text"] for s in p["signals"]]} for p in risky]}
-Return JSON {{"headline": str}}.""", tier="fast")
+    out = llm.generate_json(f"""You help a manager look after the {team.name} team. Use only the data below.
+1. "headline": calm, specific, max 16 words: who needs help this week and why (or that the team is fine). No blame.
+2. "people": for each person, "summary": max 2 short sentences in plain English for their manager: what they're
+working towards (use the expected outcome when known), how far along they are, and what's blocking them if anything.
+Data: {[{"name": p["user"]["name"], "working_on": p["working_on"], "signals": [s["text"] for s in p["signals"]]} for p in people]}
+Return JSON {{"headline": str, "people": [{{"name": str, "summary": str}}]}}.""", tier="fast")
+    by_name = {x.get("name"): x.get("summary") for x in (out or {}).get("people", []) if isinstance(x, dict)}
+    for p in people:
+        p["summary"] = by_name.get(p["user"]["name"]) or _fallback_summary(p)
     if out and out.get("headline"):
         return {"headline": out["headline"], "by_ai": True}
+    if not risky:
+        return {"headline": f"{team.name} looks healthy this week.", "by_ai": False}
     names = " and ".join(p["user"]["name"].split()[0] for p in risky[:2])
     return {"headline": f"{names} need{'s' if len(risky) == 1 else ''} attention this week.", "by_ai": False}
+
+
+def _fallback_summary(p: dict) -> str:
+    if not p["working_on"]:
+        return "No open work assigned."
+    w = p["working_on"][0]
+    text = f"Working on {w['key']} \u201c{w['title']}\u201d" + (f", aiming for: {w['outcome']}" if w["outcome"] else "") + "."
+    blocked = next((s["text"] for s in p["signals"] if s["kind"] == "blocked"), None)
+    return text + (f" {blocked}." if blocked else "")
 
 
 def teams_for(db: Session, viewer: m.User) -> list[m.Team]:
@@ -127,20 +171,40 @@ def teams_for(db: Session, viewer: m.User) -> list[m.Team]:
     return db.scalars(q).all()
 
 
+_CACHE: dict[tuple, tuple[float, dict]] = {}
+CACHE_SECONDS = 120
+
+
+def invalidate() -> None:
+    _CACHE.clear()
+
+
 def report(db: Session, viewer: m.User) -> dict:
-    out = []
-    for team in teams_for(db, viewer):
+    team_list = teams_for(db, viewer)
+    key = (viewer.org_id, tuple(t.id for t in team_list))
+    hit = _CACHE.get(key)
+    if hit and time.time() - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    gathered = []
+    for team in team_list:
         members = db.scalars(select(m.User).join(m.TeamMember, m.TeamMember.user_id == m.User.id)
                              .where(m.TeamMember.team_id == team.id, m.User.kind == "human")).all()
         people = [person(db, u, members) for u in members]
         people.sort(key=lambda p: {"high": 0, "watch": 1, "ok": 2}[p["level"]])
-        out.append({"team": {"id": team.id, "name": team.name, "color": team.color, "short": team.short},
-                    "people": people, **explain(team, people)})
+        gathered.append((team, people))
+    # One Gemini call per team, in parallel (network-bound; explain() doesn't touch the database).
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        explained = list(pool.map(lambda tp: explain(*tp), gathered))
+    out = [{"team": {"id": t.id, "name": t.name, "color": t.color, "short": t.short}, "people": people, **ex}
+           for (t, people), ex in zip(gathered, explained)]
     out.sort(key=lambda t: min([{"high": 0, "watch": 1, "ok": 2}[p["level"]] for p in t["people"]] or [2]))
-    return {"teams": out}
+    result = {"teams": out}
+    _CACHE[key] = (time.time(), result)
+    return result
 
 
 def apply_action(db: Session, viewer: m.User, action: dict) -> dict:
+    invalidate()
     task = db.get(m.Task, action.get("task_id"))
     if task is None:
         raise ValueError("That task no longer exists.")
@@ -169,6 +233,18 @@ def apply_action(db: Session, viewer: m.User, action: dict) -> dict:
         audit(db, task.org_id, actor=viewer, action=f"Asked for early feedback on {task.key}", target_type="task",
               target_id=task.id, reason="Team Health suggestion", approved_by=viewer.name)
         return {"done": f"Asked {who.name.split()[0] if who else 'the team'} to look at {task.key} now."}
+    if kind == "unblock":
+        who = db.get(m.User, action.get("to_user_id"))
+        if who is None:
+            raise ValueError("Choose who can unblock it.")
+        blocker = next((b for b in (task.blockers or []) if not b.get("resolved_at")), None)
+        detail = blocker["text"] if blocker else task.title
+        focus.notify(db, who.id, "blocker", f"{db.get(m.User, task.assignee_id).name.split()[0] if task.assignee_id else 'Someone'} "
+                                            f"is waiting on you for {task.key}", detail, task.id)
+        add_log(db, task.org_id, source="manual", task=task, author=viewer, summary=f"asked {who.name} to unblock: {detail}")
+        audit(db, task.org_id, actor=viewer, action=f"Asked {who.name} to unblock {task.key}", target_type="task",
+              target_id=task.id, reason="Team Health suggestion", approved_by=viewer.name)
+        return {"done": f"Asked {who.name.split()[0]} to unblock {task.key}."}
     if kind == "nudge":
         focus.notify(db, task.assignee_id, "nudge", f"{viewer.name.split()[0]} nudged you on {task.key}", task.title, task.id)
         return {"done": "Nudged."}

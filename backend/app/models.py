@@ -151,6 +151,10 @@ class Task(Base, TimestampMixin):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     estimate_min: Mapped[int | None] = mapped_column(Integer)
     actual_min: Mapped[int | None] = mapped_column(Integer)  # focused minutes spent, known for finished tasks
+    expected_outcome: Mapped[str | None] = mapped_column(Text)
+    outcome_by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+    # [{id, text, waiting_on, source, at, resolved_at}] — open blockers have no resolved_at
+    blockers: Mapped[list] = mapped_column(JSONB, default=list)
     links: Mapped[list] = mapped_column(JSONB, default=list)  # [{kind, label, url, ref}]
     embedding = mapped_column(Vector(EMBED_DIM), nullable=True)
 
@@ -162,7 +166,7 @@ class WorkLog(Base, TimestampMixin):
     task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), index=True)
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     on_behalf_of_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    source: Mapped[str] = mapped_column(String(12))  # claude|git|email|calendar|meeting|oncall|manual|github|sop
+    source: Mapped[str] = mapped_column(String(12))  # claude|cursor|codex|antigravity|git|email|calendar|meeting|oncall|manual|sop
     summary: Mapped[str] = mapped_column(Text)
     raw_ref: Mapped[str | None] = mapped_column(String(300))
     meta: Mapped[dict] = mapped_column(JSONB, default=dict)
@@ -322,7 +326,7 @@ class Notification(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(20))  # nudge|review|request|incident|kudos|health|meeting|fyi
+    kind: Mapped[str] = mapped_column(String(20))  # nudge|review|request|incident|kudos|health|meeting|fyi|question|blocker
     title: Mapped[str] = mapped_column(String(300))
     body: Mapped[str] = mapped_column(Text, default="")
     urgent: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -369,4 +373,7 @@ ADDED_COLUMNS = [
     ("tasks", "started_at", "timestamptz"),
     ("tasks", "estimate_min", "integer"),
     ("tasks", "actual_min", "integer"),
+    ("tasks", "expected_outcome", "text"),
+    ("tasks", "outcome_by_ai", "boolean DEFAULT false"),
+    ("tasks", "blockers", "jsonb DEFAULT '[]'::jsonb"),
 ]

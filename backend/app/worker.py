@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 
 from . import models as m
 from .db import SessionLocal, init_db, org_session
-from .services import feed, focus, ingest, llm, meetings, myday, oncall, pipeline
+from .services import feed, focus, ingest, llm, meetings, myday, oncall, pipeline, sessions
 from .services.core import now
 from .services.timeutil import local, workday
 
@@ -23,8 +23,8 @@ DAILY = [(6, 0, "pipelines"), (7, 0, "plans"), (8, 0, "feed")]
 def handle(db, event: m.Event) -> None:
     p = event.payload
     if event.kind.startswith("ingest_"):
-        {"claude": ingest.ingest_claude, "git": ingest.ingest_git, "email": ingest.ingest_email,
-         "calendar": ingest.ingest_calendar}[event.kind.removeprefix("ingest_")](db, event.org_id, p)
+        {"session": sessions.ingest_session, "claude": ingest.ingest_claude, "git": ingest.ingest_git,
+         "email": ingest.ingest_email, "calendar": ingest.ingest_calendar}[event.kind.removeprefix("ingest_")](db, event.org_id, p)
     elif event.kind == "investigate":
         oncall.investigate(db, p["incident_id"])
     elif event.kind == "rerun":

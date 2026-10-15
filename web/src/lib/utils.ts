@@ -37,7 +37,10 @@ export function firstName(name?: string | null) {
 }
 
 export const SOURCE_LABEL: Record<string, string> = {
-  claude: "Claude session",
+  claude: "Claude Code",
+  cursor: "Cursor",
+  codex: "Codex",
+  antigravity: "Antigravity",
   git: "Commit",
   email: "Email",
   calendar: "Calendar",

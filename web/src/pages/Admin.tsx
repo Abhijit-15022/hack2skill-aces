@@ -205,6 +205,8 @@ function Demo() {
       after: (r: any) => `Task ${r.result["meera@acme.test"]?.task ?? "—"} created`, go: "/tasks" },
     { key: "calendar", icon: CalendarDays, title: "Priya books the induction", sub: "A calendar invite ticks off step 4 of Rahul's onboarding SOP.", path: "/demo/signal/calendar",
       after: (r: any) => `SOP steps touched: ${r.result.sop_steps.map((s: any) => s.status).join(", ") || "none"}`, go: "/projects" },
+    { key: "session", icon: Terminal, title: "Abhijit's Cursor session hits a blocker", sub: "What relay-agent sends: new work, blocked on finance.refunds access, no clear goal. Relay creates the task, flags the blocker to his lead and asks him for the expected outcome.",
+      path: "/demo/signal/session", after: (r: any) => `${r.result.created ? "Created" : "Updated"} ${r.result.task}; blockers: ${r.result.blockers.length}; asked for outcome: ${r.result.asked_outcome ? "yes" : "no"}`, go: "/team" },
     { key: "claude", icon: Terminal, title: "Rohan finishes a Claude session", sub: "The session-end hook summarises the work into the matching task.", path: "/demo/signal/claude",
       after: (r: any) => `${r.result.created ? "Created" : "Updated"} ${r.result.task} (${r.result.matched})`, go: "/tasks" },
     { key: "feed", icon: RotateCcw, title: "Rebuild the feed", sub: "What the 08:00 job does every weekday.", path: "/feed/rebuild", after: (r: any) => `${r.created_or_updated} cards refreshed`, go: "/feed" },

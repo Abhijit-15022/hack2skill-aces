@@ -10,19 +10,20 @@ from .. import models as m
 from ..auth import Ctx, admin_ctx, require_ingest_token
 from ..config import get_settings
 from ..db import org_session, warehouse_engine
-from ..services import ingest, oncall, pipeline, runner
+from ..services import ingest, oncall, pipeline, runner, sessions
 from ..services.core import enqueue
 
 router = APIRouter(tags=["ingest"])
 settings = get_settings()
 
 HANDLERS = {
+    "session": sessions.ingest_session,
     "claude": ingest.ingest_claude,
     "git": ingest.ingest_git,
     "email": ingest.ingest_email,
     "calendar": ingest.ingest_calendar,
 }
-EMAIL_FIELD = {"claude": "user_email", "git": "author_email", "email": None, "calendar": "organizer"}
+EMAIL_FIELD = {"session": "user_email", "claude": "user_email", "git": "author_email", "email": None, "calendar": "organizer"}
 
 
 def _org_for(kind: str, payload: dict) -> int:
@@ -50,7 +51,7 @@ async def ingest_signal(kind: str, request: Request, sync: bool = False):
         with org_session(org_id) as db:
             try:
                 return {"processed": True, "result": HANDLERS[kind](db, org_id, payload)}
-            except ingest.IngestError as exc:
+            except (ingest.IngestError, sessions.SessionError) as exc:
                 raise HTTPException(422, str(exc))
     with org_session(org_id) as db:
         event = enqueue(db, org_id, f"ingest_{kind}", payload)
@@ -145,6 +146,21 @@ DEMO_SIGNALS = {
         'row-count tests for fct_revenue; they run before the 11:00 refresh."},{"type":"tool_use","name":"Write",'
         '"input":{"file_path":"tests/fct_revenue_checks.sql"}}]}}'])},
 }
+
+
+DEMO_SIGNALS["session"] = {
+    "tool": "cursor", "session_id": "cursor:demo-fct-revenue-weekly", "title": "Weekly revenue rollup for Finance",
+    "user_email": "abhijit@acme.test", "git_branch": "feature/weekly-revenue", "repo": "acme-analytics",
+    "files": ["models/fct_revenue_weekly.sql", "tests/fct_revenue_weekly.yml"],
+    "transcript": "\n".join([
+        "user: Build a weekly revenue rollup on top of fct_revenue for the Finance close dashboard",
+        "assistant: Created models/fct_revenue_weekly.sql grouping fct_revenue by ISO week, plus not-null and "
+        "uniqueness tests on week_start.",
+        "user: The refunds column should come from the refunds table, can you join it?",
+        "assistant: I can't read the finance.refunds table: permission denied for schema finance. The join is written "
+        "but can't run until someone grants SELECT on finance.refunds to the analytics role.",
+        "user: ok, I've asked Meera from Finance for access. Leave it there for now.",
+        "assistant: Done for now. Next: run the model once access is granted and compare totals with Finance's sheet."])}
 
 
 @router.post("/demo/signal/{kind}")
