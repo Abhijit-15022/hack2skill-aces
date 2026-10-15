@@ -1,0 +1,83 @@
+{
+  "_about": "Demo scenario for Relay. `./scripts/seed-demo.sh` plays it through the real pipeline (Gemini summaries, task matching, blockers, outcome questions). Edit freely: people must exist in the seed (backend/app/seed.py); sessions are what relay-agent would send.",
+  "org": "acme",
+
+  "devices": [
+    {"user_email": "abhijit@acme.test", "hostname": "abhijit-macbook", "platform": "Darwin arm64",
+     "tools": [{"tool": "claude", "found": true, "sessions_7d": 12}, {"tool": "cursor", "found": true, "sessions_7d": 6},
+               {"tool": "codex", "found": false}, {"tool": "antigravity", "found": true, "sessions_7d": 3}]},
+    {"user_email": "rohan@acme.test", "hostname": "rohan-thinkpad", "platform": "Linux x86_64",
+     "tools": [{"tool": "claude", "found": true, "sessions_7d": 9}, {"tool": "cursor", "found": false},
+               {"tool": "codex", "found": true, "sessions_7d": 4}, {"tool": "antigravity", "found": false}]},
+    {"user_email": "sam@acme.test", "hostname": "sam-macbook-air", "platform": "Darwin arm64",
+     "tools": [{"tool": "claude", "found": false}, {"tool": "cursor", "found": true, "sessions_7d": 1},
+               {"tool": "codex", "found": false}, {"tool": "antigravity", "found": true, "sessions_7d": 5}]}
+  ],
+
+  "sessions": [
+    {
+      "tool": "cursor", "session_id": "cursor:demo-fct-revenue-weekly", "user_email": "abhijit@acme.test",
+      "title": "Weekly revenue rollup for Finance", "repo": "acme-analytics", "git_branch": "feature/weekly-revenue",
+      "files": ["models/fct_revenue_weekly.sql", "tests/fct_revenue_weekly.yml"],
+      "transcript": [
+        "user: Build a weekly revenue rollup on top of fct_revenue for the Finance close dashboard",
+        "assistant: Created models/fct_revenue_weekly.sql grouping fct_revenue by ISO week, plus not-null and uniqueness tests on week_start.",
+        "user: The refunds column should come from the refunds table, can you join it?",
+        "assistant: I can't read the finance.refunds table: permission denied for schema finance. The join is written but can't run until someone grants SELECT on finance.refunds to the analytics role.",
+        "user: ok, I've asked Meera from Finance for access. Leave it there for now.",
+        "assistant: Done for now. Next: run the model once access is granted and compare totals with Finance's sheet."
+      ]
+    },
+    {
+      "tool": "antigravity", "session_id": "antigravity:demo-schema-guard", "user_email": "abhijit@acme.test",
+      "title": "Schema change guard for orders_daily", "repo": "acme-analytics", "git_branch": "feature/schema-guard",
+      "transcript": [
+        "user: Add a check that runs before orders_daily and stops it if raw.orders columns changed. Done means: the pipeline stops before building models and posts a clear message naming the column that changed.",
+        "agent: Added pipelines/checks/schema_guard.sql that compares information_schema.columns for raw.orders with a stored snapshot.",
+        "agent: Wired the guard as the first step of orders_daily; it fails with 'raw.orders: column amount renamed to net_amount' when the snapshot differs.",
+        "agent: Task summary: guard implemented and tested against a renamed column; snapshot refresh is a manual step for now."
+      ]
+    },
+    {
+      "tool": "claude", "session_id": "claude:demo-dq-checks", "user_email": "rohan@acme.test",
+      "title": "Data quality checks for fct_revenue", "repo": "acme-analytics", "git_branch": "feature/dq-checks",
+      "files": ["tests/fct_revenue_checks.sql"],
+      "transcript": [
+        "user: Add data quality checks to fct_revenue: row counts and nulls before the dashboard refresh",
+        "assistant: Added not-null tests on day and revenue, and a row-count check that fails if a day has fewer than 50 orders.",
+        "user: Run them",
+        "assistant: All checks pass on the last 30 days. They now run before the 11:00 dashboard refresh. Ready for review."
+      ]
+    },
+    {
+      "tool": "codex", "session_id": "codex:demo-pr-38", "user_email": "rohan@acme.test",
+      "title": "Review PR #38 dedupe customers", "repo": "acme-analytics", "git_branch": "pr-38",
+      "transcript": [
+        "user: Review PR #38: dedupe customers in stg_customers",
+        "assistant: The dedupe keeps the latest record per email. Two issues: it lowercases emails after the dedupe instead of before, and there is no test for customers with no email.",
+        "user: Leave those as review comments",
+        "assistant: Added both comments to PR #38 and marked it 'changes requested'."
+      ]
+    },
+    {
+      "tool": "antigravity", "session_id": "antigravity:demo-sso-joiners", "user_email": "sam@acme.test",
+      "title": "Automate SSO accounts for new joiners", "repo": "it-automation", "git_branch": "feature/joiner-sso",
+      "transcript": [
+        "user: Automate creating email and SSO accounts when HR marks a joiner as hired",
+        "agent: Wrote a script that reads the HR onboarding sheet and creates the Google Workspace account.",
+        "agent: The Okta step fails: the service account needs the 'User Administrator' role, which only an Okta super admin can grant.",
+        "user: Kavya is the Okta super admin, I've asked her. Pause here.",
+        "agent: Paused. Next: once the role is granted, run the script against the next joiner and confirm SSO login works."
+      ]
+    }
+  ],
+
+  "emails": [
+    {"from": "arjun@acme.test", "to": "meera@acme.test", "thread_id": "demo-lumen-payment",
+     "subject": "Payment run for Lumen Logistics", "body": "Hi Meera, can you include Lumen Logistics in the payment run by Monday? Their KYC is approved now."}
+  ],
+
+  "calendar": [
+    {"organizer": "priya@acme.test", "title": "Induction - Rahul Menon", "start": "Monday 10:00", "attendees": ["rahul.menon@acme.test"]}
+  ]
+}

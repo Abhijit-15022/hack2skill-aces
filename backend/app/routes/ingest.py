@@ -58,6 +58,19 @@ async def ingest_signal(kind: str, request: Request, sync: bool = False):
         return JSONResponse({"queued": True, "event_id": event.id}, status_code=202)
 
 
+@router.post("/agents/heartbeat", dependencies=[Depends(require_ingest_token)])
+async def agent_heartbeat(request: Request):
+    """relay-agent reports itself: which laptop, which AI coding tools it can see, how many sessions."""
+    from ..services import devices
+
+    p = await request.json()
+    org_id = _org_for("session", p)
+    with org_session(org_id) as db:
+        user = db.scalar(select(m.User).where(m.User.email == (p.get("user_email") or "").lower()))
+        dev = devices.heartbeat(db, user, p)
+        return {"ok": True, "user": user.name, "org": db.get(m.Org, org_id).name, "device_id": dev.id}
+
+
 @router.post("/webhooks/orchestrator", dependencies=[Depends(require_ingest_token)])
 @router.post("/webhooks/kestra", dependencies=[Depends(require_ingest_token)], include_in_schema=False)
 async def orchestrator_webhook(request: Request):

@@ -16,6 +16,7 @@ x-backend: &backend
     - ./backend/app:/app/app
     - ./backend/tests:/app/tests
     - ./pipelines:/app/pipelines
+    - ./demo:/app/demo:ro
     - relay-data:/app/data
   depends_on:
     postgres:

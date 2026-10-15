@@ -60,9 +60,12 @@ def match_task(db: Session, user: m.User, text: str, hints: list[str] = ()) -> t
         out = llm.generate_json(f"""A developer just did this work:
 {text[:1500]}
 Their open tasks: {[{"key": t.key, "title": t.title, "description": (t.description or "")[:300]} for t in shortlist]}
-Is this work clearly a continuation of one of these tasks (same deliverable), or separate new work?
+Is this work a continuation of one of these tasks, or separate new work?
+It continues a task only if it moves that task's own deliverable forward (the same thing being built, fixed or
+reviewed). Work that is related, prevents the same problem, builds on top of it, or touches the same tables or
+files is NEW work. Example: "add an alert for schema changes" after "rename a column" is new work.
 Return JSON {{"key": str or null, "why": str (max 12 words)}}. Use null unless it is clearly the same deliverable.""",
-                                tier="lite")
+                                tier="fast")
         if out is not None:
             chosen = next((t for t in shortlist if t.key == out.get("key")), None)
             if chosen is None:

@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bell, BellOff, Check, ChevronDown, Clock, FileText, GitCommitHorizontal, GitPullRequest, Lightbulb, Mail, Play, RefreshCw, Sparkles, Square, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { ConnectedTools } from "../components/Devices";
 import { Page } from "../components/Layout";
 import { Badge, ErrorNote, Spinner, spring } from "../components/ui";
 import { api, useApi } from "../lib/api";
@@ -129,6 +130,7 @@ export default function Today() {
               onFocus={() => startFocus(it)} onDone={() => markDone(it)} />)}
           </section>
           <aside className="flex min-w-[280px] flex-[1_1_300px] flex-col gap-4 lg:max-w-[340px]">
+            <ConnectedTools />
             <Timeline events={d.calendar} />
             {inbox.data && <InboxCard inbox={inbox.data} />}
           </aside>

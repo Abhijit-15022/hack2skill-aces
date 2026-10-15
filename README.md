@@ -202,12 +202,21 @@ The seed creates three weeks of history for Acme Corp: tasks with real durations
 requests, an onboarding SOP with projects, and a past incident. `./scripts/reset-demo.sh` wipes everything and starts
 fresh.
 
+To fill it with a live scenario, run `./scripts/seed-demo.sh --fresh --all` (about two minutes). It plays
+[`demo/scenario.json`](demo/scenario.json) through the same code the agent uses, so Gemini really summarises, matches
+and asks questions. The scenario has three laptops with their tools, five AI coding sessions (Cursor, Antigravity,
+Claude Code, Codex), an email request, an induction invite, the sample meeting, a broken pipeline and a focus block.
+Edit the JSON to change the story: people must exist in `backend/app/seed.py`, and each session is what relay-agent
+would send. Without `--fresh` it adds to the current data; `--meeting`, `--incident` and `--focus EMAIL` pick parts of
+`--all`.
+
 ## Connect your AI coding tools: relay-agent
 
 `agent/relay_agent.py` is a single file using only the Python standard library.
 
 ```bash
 export RELAY_URL=http://localhost:8000 RELAY_INGEST_TOKEN=<from .env> RELAY_USER_EMAIL=you@company.com
+python3 agent/relay_agent.py status            # which tools it found, and whether Relay can hear it
 python3 agent/relay_agent.py scan --since 2d   # list sessions it can see; sends nothing
 python3 agent/relay_agent.py sync --since 1d   # send them now
 python3 agent/relay_agent.py watch             # keep syncing every 5 minutes
@@ -220,6 +229,11 @@ python3 agent/relay_agent.py install           # macOS: start `watch` at login
 | Cursor | Cursor's `state.vscdb` (a copy, read-only) | Chat title, messages, timestamps, workspace |
 | Codex | `~/.codex/sessions/**/*.jsonl` | Full transcript, folder |
 | Antigravity | Antigravity's own per-conversation summaries in its app database | Title, workspace, timestamps, the agent's latest messages and task summary (full conversations are encrypted) |
+
+**Is it connected?** Every `status`, `sync` and `watch` run sends a heartbeat with metadata only: hostname, agent
+version, which tools were found, session counts and the last error. No session content is included. Each person sees
+it under *Connected tools* on Today. Admins see every laptop in Admin → **Connections**. A laptop shows **Live** if it
+checked in within the last 15 minutes.
 
 Sessions are sent once they've been quiet for 5 minutes, and again only if they changed. Re-sending a session updates
 the same task instead of creating a new one. More in [agent/README.md](agent/README.md).

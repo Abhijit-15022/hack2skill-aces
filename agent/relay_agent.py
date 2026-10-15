@@ -5,6 +5,7 @@ Reads recently updated chat sessions from Claude Code, Cursor, Codex and Antigra
 secrets locally, and sends what was worked on to Relay, which updates the matching task (progress, blockers,
 expected outcome). Standard library only; Python 3.9+.
 
+  relay-agent status             check the connection to Relay and which AI tools were found
   relay-agent scan               list sessions it can see (sends nothing)
   relay-agent sync [--since 2d]  send sessions updated since the last sync (or the given window)
   relay-agent watch              sync every few minutes, once a session has been quiet for a while
@@ -27,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -37,6 +39,7 @@ HOME = Path.home()
 STATE_DIR = HOME / ".relay-agent"
 STATE_FILE = STATE_DIR / "state.json"
 CONFIG_FILE = STATE_DIR / "config.json"
+VERSION = "0.2.0"
 MAX_CHARS = 16000
 QUIET_MINUTES = 5
 
@@ -346,6 +349,39 @@ def antigravity_sessions(since: datetime) -> Iterator[Session]:
 
 
 TOOLS = {"claude": claude_sessions, "cursor": cursor_sessions, "codex": codex_sessions, "antigravity": antigravity_sessions}
+TOOL_PATHS = {
+    "claude": [HOME / ".claude" / "projects"],
+    "cursor": [APP_SUPPORT / "Cursor" / "User" / "globalStorage" / "state.vscdb"],
+    "codex": [HOME / ".codex" / "sessions"],
+    "antigravity": [APP_SUPPORT / "Antigravity" / "User" / "globalStorage" / "state.vscdb"],
+}
+
+
+def detect(tools: list[str]) -> list[dict]:
+    """Which tools are installed here, and how many sessions they had in the last 7 days."""
+    week = datetime.now(timezone.utc) - timedelta(days=7)
+    out = []
+    for name in TOOLS:
+        found = any(p.exists() for p in TOOL_PATHS[name])
+        info = {"tool": name, "found": found, "enabled": name in tools, "sessions_7d": 0, "last_session_at": None}
+        if found and name in tools:
+            try:
+                sessions = list(TOOLS[name](week))
+                info["sessions_7d"] = len(sessions)
+                info["last_session_at"] = max(s.updated for s in sessions).isoformat() if sessions else None
+            except Exception as exc:
+                info["error"] = f"{exc.__class__.__name__}: {exc}"[:200]
+        out.append(info)
+    return out
+
+
+def heartbeat(cfg: dict, tools_info: list[dict], synced: bool = False, sent: int = 0) -> dict:
+    payload = {"user_email": cfg["email"], "hostname": platform.node(), "platform": f"{platform.system()} {platform.machine()}",
+               "version": VERSION, "tools": tools_info, "synced": synced, "sent": sent}
+    req = urllib.request.Request(f"{cfg['url']}/agents/heartbeat", data=json.dumps(payload).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", "X-Relay-Token": cfg["token"]})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.load(resp)
 
 
 # ---------------------------------------------------------------- sync
@@ -412,6 +448,10 @@ def sync(cfg: dict, since: datetime | None, quiet_minutes: int, dry: bool = Fals
         state["last_sync"] = datetime.now(timezone.utc).isoformat()
         STATE_DIR.mkdir(exist_ok=True)
         STATE_FILE.write_text(json.dumps(state, indent=1))
+        try:
+            heartbeat(cfg, detect(cfg["tools"]), synced=True, sent=sent)
+        except Exception as exc:
+            print(f"  heartbeat failed: {exc}", file=sys.stderr)
     return sent
 
 
@@ -449,6 +489,7 @@ def install() -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(prog="relay-agent", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("status")
     for name in ("scan", "sync"):
         p = sub.add_parser(name)
         p.add_argument("--since", default=None, help="window like 30m, 6h, 2d")
@@ -460,6 +501,30 @@ def main() -> None:
     cfg = config()
     if args.cmd == "install":
         return install()
+    if args.cmd == "status":
+        print(f"relay-agent {VERSION} on {platform.node()} ({platform.system()} {platform.machine()})")
+        print(f"Relay:  {cfg['url']}")
+        print(f"You:    {cfg['email'] or 'not set (RELAY_USER_EMAIL)'}")
+        tools = detect(cfg["tools"])
+        for t in tools:
+            mark = "✓" if t["found"] else "·"
+            detail = (f"{t['sessions_7d']} session(s) in the last 7 days" if t["found"] else "not installed")
+            if t["found"] and not t["enabled"]:
+                detail = "found, but turned off in RELAY_TOOLS"
+            if t.get("error"):
+                detail = f"found, but couldn't read it: {t['error']}"
+            print(f"  {mark} {t['tool']:<12} {detail}")
+        if not (cfg["token"] and cfg["email"]):
+            sys.exit("Not connected: set RELAY_INGEST_TOKEN and RELAY_USER_EMAIL.")
+        try:
+            r = heartbeat(cfg, tools)
+            print(f"Connected: Relay knows this laptop as {r['user']}'s ({r['org']}). It now shows on your Today page.")
+        except urllib.error.HTTPError as exc:
+            reason = {401: "wrong RELAY_INGEST_TOKEN", 404: f"{cfg['email']} isn't a Relay user"}.get(exc.code, exc.reason)
+            sys.exit(f"Not connected: Relay answered {exc.code} ({reason}).")
+        except OSError as exc:
+            sys.exit(f"Not connected: can't reach {cfg['url']} ({exc}).")
+        return
     if args.cmd in ("sync", "watch") and not (cfg["token"] and cfg["email"]):
         sys.exit("Set RELAY_INGEST_TOKEN and RELAY_USER_EMAIL (or `git config --global user.email`).")
     if args.cmd == "scan":

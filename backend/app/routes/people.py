@@ -40,6 +40,20 @@ def user_day(user_id: int, c: Ctx = Depends(ctx)):
     return myday.serialize(c.db, myday.get_or_plan(c.db, user), user)
 
 
+# ---------------------------------------------------------------- connected tools (relay-agent)
+
+@router.get("/me/devices")
+def my_devices(c: Ctx = Depends(ctx)):
+    from ..services import devices
+    return devices.for_user(c.db, c.user)
+
+
+@router.get("/admin/devices")
+def org_devices(c: Ctx = Depends(admin_ctx)):
+    from ..services import devices
+    return devices.for_org(c.db)
+
+
 # ---------------------------------------------------------------- Focus Guard
 
 class FocusIn(BaseModel):

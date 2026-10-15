@@ -2,12 +2,13 @@ import { AudioLines, BellOff, CalendarDays, Mail, Play, RotateCcw, Sunrise, Term
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Page } from "../components/Layout";
+import { DeviceRow, type Device } from "../components/Devices";
 import { Avatar, Badge, ErrorNote, PageHeader, Segmented, Spinner, Switch } from "../components/ui";
 import { api, useApi } from "../lib/api";
 import { useSession } from "../lib/session";
 import { timeAgo } from "../lib/utils";
 
-type Tab = "teams" | "ownership" | "ai" | "audit" | "demo";
+type Tab = "teams" | "ownership" | "ai" | "connections" | "audit" | "demo";
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>("teams");
@@ -17,12 +18,13 @@ export default function Admin() {
       <PageHeader title="Admin" subtitle={`${me?.org.name} · data stored in ${me?.org.region === "asia-south1" ? "Mumbai (asia-south1)" : me?.org.region}`}>
         <Segmented label="Admin sections" value={tab} onChange={setTab} options={[
           { value: "teams", label: "Teams" }, { value: "ownership", label: "Ownership & routing" },
-          { value: "ai", label: "AI settings" }, { value: "audit", label: "Audit log" }, { value: "demo", label: "Demo" },
+          { value: "ai", label: "AI settings" }, { value: "connections", label: "Connections" }, { value: "audit", label: "Audit log" }, { value: "demo", label: "Demo" },
         ]} />
       </PageHeader>
       {tab === "teams" && <Teams />}
       {tab === "ownership" && <Ownership />}
       {tab === "ai" && <AiSettings />}
+      {tab === "connections" && <Connections />}
       {tab === "audit" && <Audit />}
       {tab === "demo" && <Demo />}
     </Page>
@@ -227,6 +229,25 @@ function Demo() {
         ))}
       </div>
       {log.length > 0 && <div className="card flex flex-col gap-1 p-4 font-mono text-[12.5px]" role="log">{log.map((l, i) => <span key={i}>{l}</span>)}</div>}
+    </div>
+  );
+}
+
+function Connections() {
+  const { data, error } = useApi<{ devices: Device[] }>("/admin/devices", 30000);
+  if (error) return <ErrorNote message={error} />;
+  if (!data) return <Spinner />;
+  const live = data.devices.filter((d) => d.online).length;
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-[14px] text-fg2">
+        relay-agent runs on each person's laptop, reads their AI coding sessions locally and reports here every few minutes.
+        {" "}{data.devices.length} laptop{data.devices.length === 1 ? "" : "s"} connected, {live} live now.
+      </p>
+      <div className="card overflow-hidden">
+        {data.devices.length === 0 && <p className="px-5 py-6 text-[14px] text-muted">No laptops yet. Ask people to run <code className="font-mono">python3 agent/relay_agent.py status</code>.</p>}
+        {data.devices.map((d) => <DeviceRow key={d.id} d={d} />)}
+      </div>
     </div>
   );
 }

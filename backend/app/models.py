@@ -361,10 +361,27 @@ class Standup(Base, TimestampMixin):
     by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class AgentDevice(Base, TimestampMixin):
+    """A relay-agent install on someone's laptop, and which AI coding tools it can see."""
+    __tablename__ = "agent_devices"
+    __table_args__ = (UniqueConstraint("user_id", "hostname"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    hostname: Mapped[str] = mapped_column(String(200))
+    platform: Mapped[str] = mapped_column(String(60), default="")
+    version: Mapped[str] = mapped_column(String(20), default="")
+    # [{tool, label, found, sessions_7d, last_session_at}]
+    tools: Mapped[list] = mapped_column(JSONB, default=list)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sessions_sent: Mapped[int] = mapped_column(Integer, default=0)
+
+
 RLS_TABLES = [
     "users", "teams", "team_members", "resources", "lineage", "sops", "sop_steps", "projects", "tasks",
     "work_logs", "email_requests", "step_progress", "incidents", "feed_items", "reactions", "audit_log",
-    "calendar_events", "day_plans", "notifications", "meetings", "standups",
+    "calendar_events", "day_plans", "notifications", "meetings", "standups", "agent_devices",
 ]
 
 # Columns added after the first release; init_db adds them to existing databases.
