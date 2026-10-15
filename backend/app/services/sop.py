@@ -179,7 +179,10 @@ def match_evidence(db: Session, log: m.WorkLog, kind: str, evidence: str) -> lis
         if score < ASK:
             continue
         judged = _judge(step, project, evidence)
-        confidence = judged if judged is not None else score
+        confidence = judged if judged is not None else min(score, 1.0)
+        if confidence < ASK and score >= 1.2:
+            # Strong text match (step words and the person's full name) but the model disagrees: ask a person.
+            confidence = 0.6
         if confidence >= AUTO_DONE:
             mark_done(db, sp, log=log, confidence=confidence, by=None)
         elif confidence >= ASK and sp.status == "pending":
