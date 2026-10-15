@@ -113,13 +113,53 @@ def _people_sources(db: Session, viewer: m.User, question: str) -> list[dict]:
     return out
 
 
+OVERVIEW = re.compile(r"\b(everyone|everybody|people|team|teams|folks|who('s| is)?|most|anyone|today|this week|"
+                      r"working on|blocked|blockers|stuck|status|overdue|busy|pending|progress|priorit)", re.I)
+
+
+def _overview_sources(db: Session, viewer: m.User) -> list[dict]:
+    """A snapshot of current work across the people the viewer can see: for 'what is everyone doing' questions."""
+    visible = set(db.scalars(_visible_tasks(db, viewer)))
+    people = db.scalars(select(m.User).where(m.User.kind == "human").order_by(m.User.name)).all()
+    out, blockers = [], []
+    for u in people:
+        tasks = [t for t in db.scalars(select(m.Task).where(m.Task.assignee_id == u.id, m.Task.status != "done")
+                                       .order_by(m.Task.updated_at.desc())) if t.id in visible]
+        plan = db.scalar(select(m.DayPlan).where(m.DayPlan.user_id == u.id).order_by(m.DayPlan.day.desc()).limit(1))
+        planned = [i for i in (plan.items if plan else []) if i["task_id"] in visible]
+        if not tasks and not planned:
+            continue
+        doing = [t for t in tasks if t.status in ("doing", "review")]
+        parts = []
+        if planned:
+            parts.append("today's plan: " + "; ".join(f"{i['key']} {i['title']}" for i in planned))
+        if doing:
+            parts.append("in progress: " + "; ".join(f"{t.key} {t.title}" for t in doing[:4]))
+        parts.append(f"{len(tasks)} open task{'s' if len(tasks) != 1 else ''}")
+        for t in tasks:
+            for b in (t.blockers or []):
+                if not b.get("resolved_at"):
+                    blockers.append(f"{u.name.split()[0]} on {t.key}: {b['text']}"
+                                    + (f" (waiting on {b['waiting_on']})" if b.get("waiting_on") else ""))
+        out.append({"type": "person", "id": u.id, "title": f"{u.name}'s work", "meta": parts[-1],
+                    "text": f"{u.name} ({u.title}): " + ". ".join(parts) + ".",
+                    "snippet": f"{u.name.split()[0]}: " + (planned[0]["title"] if planned else (doing or tasks)[0].title),
+                    "score": 0.9, "task_id": (planned[0]["task_id"] if planned else (doing or tasks)[0].id)})
+    if blockers:
+        out.append({"type": "blockers", "id": 0, "title": "Open blockers", "meta": f"{len(blockers)} open",
+                    "text": "Open blockers: " + "; ".join(blockers) + ".", "snippet": blockers[0], "score": 0.9})
+    return out
+
+
 def answer(db: Session, viewer: m.User, question: str) -> dict:
     if SMALL_TALK.match(question):
         name = viewer.name.split()[0]
         greeting = "" if re.match(r"\s*(what can you do|help|who are you)", question, re.I) else f"Hi {name}. "
         text = greeting + CAN_DO
         return {"answer": text, "segments": [{"text": text, "cite": 0}], "sources": [], "searched": 0}
-    sources = _people_sources(db, viewer, question) + search(db, viewer, question)
+    named = _people_sources(db, viewer, question)
+    overview = _overview_sources(db, viewer) if not named and OVERVIEW.search(question) else []
+    sources = named + overview + search(db, viewer, question, k=6 if overview else 10)
     if not sources:
         return {"answer": "I couldn't find anything about that in the work you can see.",
                 "segments": [{"text": "I couldn't find anything about that in the work you can see.", "cite": 0}],
@@ -127,7 +167,8 @@ def answer(db: Session, viewer: m.User, question: str) -> dict:
     numbered = "\n".join(f"[{i + 1}] {s['text'][:700]}" for i, s in enumerate(sources))
     out = llm.generate_json(f"""You are Relay, the team's assistant, answering {viewer.name.split()[0]}. Answer using
 ONLY the numbered notes below. Be brief (max 4 sentences), plain English and specific (names, task keys, dates).
-Prefer current status (open tasks, today's plan) over older activity. Cite the note numbers you used.
+Prefer current status (open tasks, today's plan) over older activity. For questions about the whole team, give a
+short overview (themes, who is doing what, anything blocked), not a list of everything. Cite the note numbers you used.
 If the notes don't answer the question, say "I couldn't find that in the work you can see" and suggest what
 they could ask instead. Never mention "notes", "sources" or "the data provided".
 Return JSON {{"segments": [{{"text": str, "cite": int or 0}}]}}: consecutive pieces of the answer, each with the
