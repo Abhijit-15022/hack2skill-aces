@@ -113,7 +113,8 @@ def _suggest(db, user, signals, open_tasks, requests, reviews, quiet, teammates)
             if who and who.id != user.id:
                 return {"type": "unblock", "task_id": s["task_id"], "to_user_id": who.id,
                         "label": f"Ask {who.name.split()[0]} to unblock",
-                        "text": f"{user.name.split()[0]} is waiting on {who.name.split()[0]}: {s['text'].split(': ', 1)[-1]}"}
+                        "text": f"{user.name.split()[0]} is waiting on {who.name.split()[0]}: "
+                                f"{re.sub(r' [(]waiting on [^)]*[)]$', '', s['text'].split(': ', 1)[-1])}"}
     if "overload" in kinds or "after_hours" in kinds:
         movable = sorted(requests or open_tasks, key=lambda t: (t.priority == "high", t.due_at is not None))
         to = _least_loaded(db, teammates, user.id)

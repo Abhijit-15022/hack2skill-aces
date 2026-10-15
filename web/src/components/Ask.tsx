@@ -104,7 +104,7 @@ function AskPanel({ seed, onNavigate }: { seed?: string; onNavigate: () => void 
       </form>
       <div className="flex items-center gap-2 border-b border-line/[0.07] px-5 py-2.5 text-[12.5px] text-muted">
         <ShieldCheck size={14} aria-hidden />
-        Searching tasks, emails, commits, Claude sessions and SOPs {me?.user.is_org_admin ? "across the company" : "from teams you can see"}.
+        Searching tasks, AI coding sessions, emails, commits, meetings and SOPs {me?.user.is_org_admin ? "across the company" : "from teams you can see"}.
       </div>
 
       <div className="max-h-[56vh] overflow-y-auto">
@@ -146,7 +146,7 @@ function AskPanel({ seed, onNavigate }: { seed?: string; onNavigate: () => void 
       <div className="flex flex-wrap items-center gap-4 border-t border-line/[0.07] px-5 py-3 text-[12px] text-muted">
         <span className="flex items-center gap-1.5"><span className="kbd">↵</span>Ask</span>
         <span className="flex items-center gap-1.5"><span className="kbd">esc</span>Close</span>
-        <span className="ml-auto">Answers cite their sources · Gemini on Vertex AI</span>
+        <span className="ml-auto">Answers cite their sources · Powered by Gemini</span>
       </div>
     </div>
   );

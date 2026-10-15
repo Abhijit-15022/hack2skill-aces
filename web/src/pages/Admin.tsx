@@ -146,7 +146,7 @@ function AiSettings() {
           </div>
         ))}
       </div>
-      <p className="text-[12.5px] text-muted">Signed in as {me?.user.email}. Gemini on Vertex AI does not train on your data.</p>
+      <p className="text-[12.5px] text-muted">Signed in as {me?.user.email}. On Vertex AI or a paid Gemini API plan, prompts aren't used to train Google's models; free-tier keys may be.</p>
     </div>
   );
 }
