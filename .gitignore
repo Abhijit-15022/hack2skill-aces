@@ -1,0 +1,9 @@
+.env
+node_modules/
+web/dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+# Kestra source clone (not used: compose runs the official image)
+kestra/

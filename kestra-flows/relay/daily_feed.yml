@@ -1,0 +1,17 @@
+id: daily_feed
+namespace: relay
+description: Rebuilds every manager's feed at 08:00 so it's ready before the day starts.
+
+tasks:
+  - id: rebuild
+    type: io.kestra.plugin.core.http.Request
+    uri: "__RELAY_API__/internal/feed/rebuild-all"
+    method: POST
+    headers:
+      X-Relay-Token: "__RELAY_TOKEN__"
+
+triggers:
+  - id: every_morning
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 8 * * 1-5"
+    timezone: Asia/Kolkata

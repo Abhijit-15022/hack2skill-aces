@@ -1,0 +1,31 @@
+#!/bin/sh
+# Relay git hook: sends each commit (message, files, a trimmed diff) so the matching task updates itself.
+# Config: RELAY_URL, RELAY_INGEST_TOKEN (env vars). Runs in the background and never blocks the commit.
+RELAY_URL="${RELAY_URL:-http://localhost:8000}"
+[ -z "$RELAY_INGEST_TOKEN" ] && exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+
+(
+python3 - "$RELAY_URL" "$RELAY_INGEST_TOKEN" <<'PY'
+import json, subprocess, sys, urllib.request
+url, token = sys.argv[1], sys.argv[2]
+def git(*a):
+    return subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()
+payload = {
+    "sha": git("rev-parse", "HEAD"),
+    "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+    "repo": git("rev-parse", "--show-toplevel").rsplit("/", 1)[-1],
+    "author_email": git("log", "-1", "--format=%ae"),
+    "message": git("log", "-1", "--format=%B"),
+    "files": git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").splitlines(),
+    "diff": git("show", "--format=", "--unified=1", "HEAD")[:6000],
+}
+req = urllib.request.Request(url.rstrip("/") + "/ingest/git", data=json.dumps(payload).encode(),
+    headers={"Content-Type": "application/json", "X-Relay-Token": token}, method="POST")
+try:
+    urllib.request.urlopen(req, timeout=10)
+except Exception:
+    pass
+PY
+) >/dev/null 2>&1 &
+exit 0

@@ -1,0 +1,26 @@
+id: orders_daily
+namespace: data
+description: Builds stg_orders and fct_revenue, which feed the Revenue dashboard (business owner Finance).
+
+tasks:
+  - id: stg_orders
+    type: io.kestra.plugin.core.http.Request
+    uri: "__RELAY_API__/runner/models/stg_orders/run"
+    method: POST
+    headers:
+      X-Relay-Token: "__RELAY_TOKEN__"
+      X-Execution-Id: "{{ execution.id }}"
+
+  - id: fct_revenue
+    type: io.kestra.plugin.core.http.Request
+    uri: "__RELAY_API__/runner/models/fct_revenue/run"
+    method: POST
+    headers:
+      X-Relay-Token: "__RELAY_TOKEN__"
+      X-Execution-Id: "{{ execution.id }}"
+
+triggers:
+  - id: every_morning
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 6 * * *"
+    timezone: Asia/Kolkata

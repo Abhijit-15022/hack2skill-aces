@@ -1,0 +1,24 @@
+id: notify_relay
+namespace: relay
+description: Tells Relay whenever a flow in the data namespace fails (opens an incident) or succeeds (verifies a fix).
+
+tasks:
+  - id: notify
+    type: io.kestra.plugin.core.http.Request
+    uri: "__RELAY_API__/webhooks/kestra"
+    method: POST
+    contentType: application/json
+    headers:
+      X-Relay-Token: "__RELAY_TOKEN__"
+    body: |
+      {"executionId": "{{ trigger.executionId }}", "namespace": "{{ trigger.namespace }}",
+       "flowId": "{{ trigger.flowId }}", "state": "{{ trigger.state }}"}
+
+triggers:
+  - id: on_data_runs
+    type: io.kestra.plugin.core.trigger.Flow
+    states:
+      - FAILED
+      - WARNING
+      - SUCCESS
+    when: "{{ flow.namespace | startsWith('data') }}"
