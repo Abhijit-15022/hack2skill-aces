@@ -1,4 +1,4 @@
-"""Runs SQL models from ./pipelines/models against the warehouse database (called by Kestra flows)."""
+"""Runs SQL models from ./pipelines/models against the warehouse database (called by the pipeline runner or an external orchestrator)."""
 from pathlib import Path
 
 from sqlalchemy import text

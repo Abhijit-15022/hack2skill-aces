@@ -1,80 +1,91 @@
-# Relay — the task manager that updates itself
+# Relay: an AI chief of staff for every team
 
 Google Cloud AI Builder Cup · theme: **Future of Work & Enterprise Productivity**
 
-Relay removes the busywork around work. Tasks are created, filled in and closed from where work already happens
-(Claude Code sessions, git commits, email, calendar). SOPs become live checklists that tick themselves off. Managers
-catch up through a feed that ends. Anyone can ask the company's work history a question. Tech teams also get an
-on-call agent that diagnoses pipeline failures and raises a fix for a person to approve.
+Relay removes the busywork around work. Tasks fill themselves in from where work already happens (Claude Code
+sessions, git commits, email, calendar, meeting recordings). Every morning it plans each person's day, then guards
+their focus. Managers see who needs help before anyone asks, and read a written standup instead of holding one.
+Tech teams also get an on-call agent that diagnoses pipeline failures and raises a fix for a person to approve.
 
-| Pillar | Feature |
+| Productivity blocker (from Atlassian, Asian Efficiency, ProjectManager) | Relay feature |
 |---|---|
-| Productivity | Tasks that update themselves (Claude hook, git hook, email, calendar) · feed replaces status meetings |
-| Efficiency | On-call agent: Kestra failure → investigation → fix → review task → rerun → closed |
-| Knowledge accessibility | Ask (⌘K): answers with citations, filtered to what the asker may see |
-| Workflow execution | SOP builder → projects whose steps are matched to real evidence; outdated-SOP detection |
-| Collaboration | Routing by resource ownership, FYIs to business owners, nudges, kudos |
+| Too many tasks, no idea where to start; bad estimates; back-to-back calendars | **My Day**: top 3 by urgency and importance, estimates from similar finished tasks, focus time booked in free gaps, a context pack per task |
+| Notifications and interruptions | **Focus Guard**: non-urgent pings wait until the focus block ends; Gemini decides what's urgent enough to come through |
+| Meetings eat focus time | **Written standup** from logged work; **meeting recordings** become decisions, tasks and hand-overs |
+| Overload, burnout, uneven workload, late feedback | **Team Health**: overload, after-hours work (only with consent), stuck reviews, missing early feedback, each with one suggested action |
+| Work nobody updates; searching emails and drives | Self-updating tasks (Claude, git, email, calendar) and **Ask** (⌘K) with citations |
+| Tool and pipeline failures | **On-call agent**: failure → investigation → fix → review task → rerun → closed |
+| Repeatable processes | **SOP builder**; projects whose steps tick themselves off from evidence; outdated-SOP detection |
 
 ## Run it
 
 ```bash
 cp .env.example .env          # add GEMINI_API_KEY when you have it (works offline without)
-docker compose up -d          # postgres, kestra, api, worker, web
-open http://localhost:3100    # sign in as Kavya Rao (admin)
+docker compose up -d          # postgres, api, worker, web
+open http://localhost:3100    # sign in as Kavya Rao (admin) or Meera Rao (busy Finance lead)
 ```
 
 | Service | URL |
 |---|---|
 | Web app | http://localhost:3100 |
 | API + interactive docs | http://localhost:8000/docs |
-| Kestra UI | http://localhost:8080 (KESTRA_USER / KESTRA_PASSWORD from `.env`) |
 
 Fresh demo data: `./scripts/reset-demo.sh` (wipes everything, reseeds).
 Tests: `docker compose exec api pytest -q tests` (end-to-end, against the running stack; reset afterwards).
 
 ### Gemini
-Set `GEMINI_API_KEY` in `.env` (or `GOOGLE_CLOUD_PROJECT` to use Vertex AI with the VM's service account), then
-`docker compose up -d api worker`. Every AI step has an offline fallback, so the demo runs without a key; with a key,
-summaries, request detection, SOP drafting, diagnosis and Ask answers come from Gemini (Flash for high-volume calls,
-Pro for diagnosis and SOP drafting). Embeddings are recomputed automatically when the provider changes.
+Put `GEMINI_API_KEY` in `.env` (or set `GOOGLE_CLOUD_PROJECT` to use Vertex AI with the VM's service account), then
+`docker compose up -d --force-recreate api worker`. Models are set in `.env`:
 
-## Demo script (≈3 min)
+| Use | Model | Thinking |
+|---|---|---|
+| Diagnosis, SOP drafting | `gemini-3.8-flash` | high |
+| Meeting recordings (audio) | `gemini-3.8-flash` | medium (about 25 s per minute-long recording) |
+| Day plans, summaries, standups, Ask | `gemini-3.8-flash` | low (2–6 s) |
+| "Is this urgent?" checks in Focus Guard | `gemini-3.5-flash-lite` | none |
+| Search embeddings | `gemini-embedding-001` (768 dimensions, batched) | — |
 
-Sign in as **Kavya Rao** → **Admin → Demo** has a button for each step.
+`gemini-3.1-pro-preview` (what `gemini-pro-latest` points to) was tested and took over 3 minutes per call, so it
+isn't used. Every AI step also has an offline fallback, so the app runs without a key (meeting capture excepted).
 
-1. **Home** — the manager feed: team stories (ring colour = health), cards ranked "needs you" first, each with an
-   action, ending in "You're all caught up".
-2. **Break the pipeline** — renames `raw.orders.amount` (as yesterday's refactor did) and runs `orders_daily` on
-   Kestra. Kestra fails → webhook → the **on-call agent** reads logs, traces lineage, checks the data, finds the
-   change in task DP-1 (logged from Abhijit's Claude session), recalls INC-031, drafts the one-line fix and creates a
-   review task for Rohan. Finance gets an FYI that the Revenue dashboard is late.
-3. **Approve** on the On-call page → Relay applies the fix, reruns on Kestra, closes the incident; the feed turns green.
-4. **Ananya emails Meera** → a task appears for Meera with "last time you replied with Vendor_Payouts_Q2.xlsx".
-5. **Priya books the induction** → step 4 of Rahul's onboarding SOP ticks itself off; the project page shows the
-   out-of-order step and the "SOP may be out of date" suggestion.
+## Demo script (≈4 min)
+
+Admin → **Demo** has a button for each step.
+
+1. **Today (as Meera Rao):** her top 3 with reasons, estimates ("median of 5 similar tasks"), focus booked
+   between her meetings, and a "What you need" pack per task.
+2. **Focus Guard:** press *Meera starts focusing, 5 pings arrive*. Four wait; only the pipeline failure gets through.
+3. **Team (as Kavya):** Meera is overloaded with late nights; Rohan's review has waited 30 h; Abhijit's refactor has
+   had no feedback. One tap applies each suggestion. Switch to *Written standup*: no daily meeting needed.
+4. **Meetings:** process the 64-second sample. Gemini finds the decisions (with timestamps), creates "schema change
+   check" for Abhijit due Friday, and hands the GST request from Meera to Ananya.
+5. **Break the pipeline:** the on-call agent reads the error, traces lineage, finds the change in DP-1 (from
+   Abhijit's Claude session), recalls INC-031 and drafts a one-line fix with a review task for Rohan. Approve →
+   rerun → green.
 6. **⌘K Ask** "Why did we change the orders model?" → answer with numbered sources.
-7. Sign in as **Grace (Globex)** → a different company sees none of Acme's data (Postgres row-level security).
+7. Sign in as **Grace (Globex)**: a different company sees none of Acme's data (Postgres row-level security).
 
 ## Architecture
 
 ```
  Claude Code ─ SessionEnd hook ─┐
  git ─ post-commit hook ────────┤
- email / calendar ──────────────┼─► FastAPI /ingest ─► events queue ─► worker ─► Gemini (summarise, match, diagnose)
- Kestra ─ notify_relay flow ────┘                                        │
-                                                                         ▼
- web (React, nginx) ◄── FastAPI REST ◄──────────── Postgres + pgvector (row-level security per company)
-                                                                         ▲
- Kestra data.orders_daily ─► /runner/models/{name}/run ─► warehouse DB ──┘
+ email / calendar ──────────────┼─► FastAPI ─► events queue ─► worker ─► Gemini (summarise, plan, diagnose, listen)
+ meeting recordings ────────────┤                                 │
+ any orchestrator ─ webhook ────┘                                 ├─ daily: 06:00 pipelines · 07:00 day plans · 08:00 feed
+                                                                  └─ every 20 s: release notifications held during focus
+ web (React, nginx) ◄── FastAPI REST ◄── Postgres + pgvector (row-level security per company) ── warehouse DB
 ```
 
-- `backend/` FastAPI API + worker. Key modules: `services/oncall.py` (agent), `services/ingest.py` (Claude / git /
-  email / calendar), `services/sop.py` (SOP engine), `services/feed.py`, `services/ask.py`, `services/redact.py`
-  (secrets and personal data removed before any text reaches the AI).
+- `backend/` FastAPI API + worker. Services: `myday.py` (plans), `focus.py` (calendar, Focus Guard),
+  `health.py` (Team Health), `meetings.py` (standups, recordings), `oncall.py` + `pipeline.py` (on-call agent and
+  the built-in pipeline runner), `ingest.py` (Claude / git / email / calendar), `sop.py`, `feed.py`, `ask.py`,
+  `redact.py` (secrets and personal data removed before any text reaches the AI).
 - `web/` React + Vite + Tailwind, Apple-style UI with shadcn-style components.
-- `kestra-flows/` deployed automatically by the worker: the demo pipeline, the failure/success notifier, the 08:00 feed.
-- `pipelines/` SQL models the demo pipeline builds (`templates/` = originals).
+- `pipelines/` SQL models of the demo pipeline (`templates/` = originals).
 - `hooks/` Claude Code SessionEnd hook and git post-commit hook (`./hooks/install.sh claude|git`).
+- [`KESTRA.md`](KESTRA.md): optional. How to run the pipelines from Kestra (or another orchestrator) instead of
+  the built-in runner; ready-made flows are in `docs/kestra/flows/`.
 
 Every table carries `org_id`; the app connects as a non-superuser role so Postgres row-level security enforces the
 isolation even if application code has a bug. All AI actions are written to the audit log; per-team autonomy

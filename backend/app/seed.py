@@ -10,7 +10,8 @@ from . import models as m
 from .config import get_settings
 from .db import org_session, warehouse_engine
 from .services import llm
-from .services.core import add_log, create_task, feed, now
+from .services.core import add_log, create_task, enqueue, feed, now
+from .services.timeutil import at, today, workday
 
 log = logging.getLogger(__name__)
 settings = get_settings()
@@ -21,10 +22,15 @@ def seed_if_empty() -> bool:
         if db.scalar(select(m.Org.id).limit(1)):
             return False
     seed_warehouse()
-    acme = _org("Acme Corp", "acme")
-    _seed_acme(acme)
-    globex = _org("Globex", "globex")
-    _seed_globex(globex)
+    token = llm.defer_embeddings.set(True)  # computed afterwards in batches by the worker
+    try:
+        acme = _org("Acme Corp", "acme")
+        _seed_acme(acme)
+        _seed_history(acme)
+        globex = _org("Globex", "globex")
+        _seed_globex(globex)
+    finally:
+        llm.defer_embeddings.reset(token)
     log.info("Seeded demo data")
     return True
 
@@ -87,7 +93,7 @@ def _seed_acme(org_id: int) -> None:
                                     role="lead" if u.id == lead.id else "member"))
             return t
 
-        data = team("Data Platform", "DP", "#0071E3", "Pipelines, dbt models, Kestra flows, warehouse tables and "
+        data = team("Data Platform", "DP", "#0071E3", "Pipelines, dbt models, warehouse tables and "
                     "dashboards.", rohan, [rohan, abhijit])
         fin = team("Finance", "FIN", "#B25E00", "Payouts, reconciliation, month-end close, invoices and accruals.",
                    meera, [meera, ananya], autonomy="suggest")
@@ -106,7 +112,7 @@ def _seed_acme(org_id: int) -> None:
             db.flush()
             return r
 
-        flow = res("orders_daily", "kestra_flow", data, fin, {"namespace": "data"})
+        flow = res("orders_daily", "pipeline", data, fin, {"namespace": "data", "runs": "daily 06:00"})
         raw_orders = res("raw.orders", "table", data)
         stg = res("stg_orders", "model", data, fin, {"path": "models/stg_orders.sql"})
         fct = res("fct_revenue", "model", data, fin, {"path": "models/fct_revenue.sql"})
@@ -295,3 +301,140 @@ def _seed_globex(org_id: int) -> None:
         db.add(m.TeamMember(org_id=org_id, team_id=t.id, user_id=u.id, role="lead"))
         create_task(db, org_id, title="Confidential: Globex acquisition checklist", team=t, created_by=u,
                     description="Due diligence for the acquisition of Initech. Only Globex can see this.")
+
+
+# ---------------------------------------------------------------- three weeks of history
+
+CLOSED = [
+    # (assignee email, team, type, title, actual minutes, days ago)
+    ("meera@acme.test", "Finance", "request", "Send Q2 GST summary to Ananya", 40, 20),
+    ("meera@acme.test", "Finance", "request", "Vendor ledger for Lumen Logistics", 55, 18),
+    ("meera@acme.test", "Finance", "request", "Payout confirmation for Brightline", 30, 16),
+    ("meera@acme.test", "Finance", "request", "Cost centre mapping for HR", 65, 13),
+    ("meera@acme.test", "Finance", "request", "Petty cash reconciliation", 45, 11),
+    ("ananya@acme.test", "Finance", "request", "Expense report for the sales offsite", 35, 9),
+    ("meera@acme.test", "Finance", "request", "TDS certificate for a vendor", 25, 8),
+    ("meera@acme.test", "Finance", "request", "Invoice copy for Brightline", 20, 6),
+    ("meera@acme.test", "Finance", "request", "Budget vs actual for the Data team", 75, 4),
+    ("rohan@acme.test", "Data Platform", "review", "Review PR #31: incremental fct_revenue", 35, 15),
+    ("abhijit@acme.test", "Data Platform", "review", "Review PR #33: customer dimension", 25, 12),
+    ("rohan@acme.test", "Data Platform", "review", "Review PR #35: refunds model", 40, 7),
+    ("abhijit@acme.test", "Data Platform", "review", "Review PR #36: orders tests", 20, 5),
+    ("rohan@acme.test", "Data Platform", "feature", "Partition raw.orders by month", 300, 17),
+    ("abhijit@acme.test", "Data Platform", "feature", "Add freshness checks to the warehouse", 240, 10),
+    ("rohan@acme.test", "Data Platform", "feature", "Revenue dashboard: weekly view", 420, 6),
+    ("sam@acme.test", "IT", "sop_step", "Create accounts for joiner #8", 25, 19),
+    ("sam@acme.test", "IT", "sop_step", "Ship laptop to joiner #8", 35, 18),
+    ("sam@acme.test", "IT", "sop_step", "Create accounts for joiner #9", 20, 7),
+    ("priya@acme.test", "People (HR)", "sop_step", "Book induction for joiner #9", 30, 6),
+    ("priya@acme.test", "People (HR)", "feature", "Update the leave policy page", 90, 14),
+    ("arjun@acme.test", "Procurement", "request", "KYC documents for Northwind", 45, 12),
+]
+
+OPEN_REQUESTS = [
+    # Meera's pile: with the two seeded earlier this makes 9 open requests
+    ("priya@acme.test", "Reimbursement summary for the HR team", 1, 2),
+    ("ananya@acme.test", "GST input credit for Q2", 2, 3),
+    ("arjun@acme.test", "Vendor ageing report for Procurement", 2, 1),
+    ("priya@acme.test", "Salary advance ledger", 3, 4),
+    ("rohan@acme.test", "Revenue reconciliation with the Data team", 4, 2),
+    ("kavya@acme.test", "Cost of the leadership offsite", 1, 5),
+    ("sam@acme.test", "Audit query: September journal entries", 5, -1),
+]
+
+CALENDAR = {
+    # email: [(weekday or None for every workday, start h, m, minutes, title)]
+    "kavya@acme.test": [(None, 11, 0, 60, "Leadership sync"), (None, 15, 0, 30, "1:1s"), (2, 16, 0, 60, "Budget review")],
+    "meera@acme.test": [(None, 10, 30, 60, "Vendor calls"), (None, 11, 30, 60, "Audit prep"), (None, 14, 0, 60, "Close review"),
+                        (None, 15, 0, 30, "1:1 with Kavya"), (None, 17, 0, 30, "Treasury check-in")],
+    "rohan@acme.test": [(None, 10, 0, 15, "Data standup"), (None, 12, 0, 60, "Architecture review"), (3, 16, 0, 30, "Hiring panel")],
+    "abhijit@acme.test": [(None, 10, 0, 15, "Data standup"), (1, 14, 0, 60, "Data modelling session")],
+    "priya@acme.test": [(None, 10, 0, 60, "Interviews"), (None, 14, 0, 30, "People team sync")],
+    "arjun@acme.test": [(None, 11, 0, 45, "Vendor negotiations")],
+    "sam@acme.test": [(None, 9, 45, 15, "IT standup"), (4, 15, 0, 60, "Security review")],
+    "ananya@acme.test": [(None, 12, 0, 60, "Sales pipeline review")],
+}
+
+
+def _seed_history(org_id: int) -> None:
+    t0, d0 = now(), today()
+
+    def day(n):  # n working days ago (0 = today)
+        d = d0
+        while n > 0:
+            d -= timedelta(days=1)
+            if workday(d):
+                n -= 1
+        return d
+
+    with org_session(org_id) as db:
+        users = {u.email: u for u in db.scalars(select(m.User))}
+        teams = {t.name: t for t in db.scalars(select(m.Team))}
+        meera, rohan, abhijit = users["meera@acme.test"], users["rohan@acme.test"], users["abhijit@acme.test"]
+        meera.share_wellbeing = abhijit.share_wellbeing = True
+
+        for email, team, kind, title, minutes, ago in CLOSED:
+            u = users[email]
+            d = day(max(1, ago * 5 // 7))
+            start = at(d, 10 + ago % 6, 15)
+            t = create_task(db, org_id, title=title, team=teams[team], created_by=u, assignee_id=u.id, type=kind,
+                            status="done", description_by_ai=True, description=f"{title}. Finished in {minutes} minutes.")
+            t.created_at, t.started_at, t.closed_at = start - timedelta(hours=3), start, start + timedelta(minutes=minutes)
+            t.actual_min = t.estimate_min = minutes
+            add_log(db, org_id, source="email" if kind == "request" else "git" if team == "Data Platform" else "manual",
+                    task=t, author=u, summary=f"Finished: {title.lower()}").created_at = t.closed_at
+
+        for requester, title, ago, due_in in OPEN_REQUESTS:
+            req = users[requester]
+            created = at(day(ago), 9 + ago, 40)
+            t = create_task(db, org_id, title=title, team=teams["Finance"], created_by=None, assignee_id=meera.id,
+                            type="request", description_by_ai=True, due_at=at(d0 + timedelta(days=due_in), 18),
+                            description=f"{req.email} asked for this by email.",
+                            links=[{"kind": "email", "label": f"Email from {req.name.split()[0]}", "ref": f"seed-{title}"}])
+            t.created_at = created
+            db.add(m.EmailRequest(org_id=org_id, task_id=t.id, thread_id=f"seed-{title}", from_addr=req.email,
+                                  to_user_id=meera.id, subject=title, body=f"Hi Meera, could you send me the {title.lower()}?"))
+            add_log(db, org_id, source="email", task=t, on_behalf_of=meera,
+                    summary=f"Email from {req.email}: {title}").created_at = created
+
+        # Late nights for Meera on 3 of the last 5 working days
+        open_fin = db.scalars(select(m.Task).where(m.Task.assignee_id == meera.id, m.Task.status != "done")).all()
+        for n, (h, mi) in zip((1, 2, 4), ((22, 10), (23, 5), (22, 40))):
+            target = open_fin[n % len(open_fin)]
+            add_log(db, org_id, source="email", task=target, author=meera,
+                    summary=f"Worked on {target.title.lower()} late in the evening").created_at = at(day(n), h, mi)
+
+        # A review stuck on Rohan for 30 hours
+        review = create_task(db, org_id, title="Review PR #38: dedupe customers in stg_customers", team=teams["Data Platform"],
+                             created_by=abhijit, assignee_id=rohan.id, type="review", status="review", priority="high",
+                             description_by_ai=True,
+                             description="Abhijit's change removes duplicate customers before revenue is calculated. "
+                                         "Waiting on Rohan; the weekly revenue numbers are blocked on it.",
+                             links=[{"kind": "pr", "label": "PR #38", "ref": "38"}])
+        review.created_at, review.estimate_min = t0 - timedelta(hours=30), 30
+        add_log(db, org_id, source="git", task=review, author=abhijit,
+                summary="Opened PR #38: dedupe customers in stg_customers").created_at = review.created_at
+
+        # Abhijit's long refactor: three days in, nobody else has looked at it
+        refactor = db.scalar(select(m.Task).where(m.Task.title == "Refactor orders model"))
+        refactor.created_at, refactor.started_at, refactor.estimate_min = t0 - timedelta(days=3), t0 - timedelta(days=3), 480
+
+        # Calendars: this week and next
+        for email, entries in CALENDAR.items():
+            u = users[email]
+            for offset in range(-2, 8):
+                d = d0 + timedelta(days=offset)
+                if not workday(d):
+                    continue
+                for weekday, h, mi, minutes, title in entries:
+                    if weekday is not None and d.weekday() != weekday:
+                        continue
+                    db.add(m.CalendarEvent(org_id=org_id, user_id=u.id, title=title, start=at(d, h, mi),
+                                           end=at(d, h, mi) + timedelta(minutes=minutes), kind="meeting", source="calendar"))
+
+        # Yesterday's notifications, already read
+        for email, kind, title in [("rohan@acme.test", "review", "Abhijit asked you to review PR #38"),
+                                   ("meera@acme.test", "request", "New request from Arjun"),
+                                   ("meera@acme.test", "request", "New request from Priya")]:
+            db.add(m.Notification(org_id=org_id, user_id=users[email].id, kind=kind, title=title, status="read",
+                                  delivered_at=t0 - timedelta(hours=20)))

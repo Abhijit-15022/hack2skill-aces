@@ -5,7 +5,7 @@ description: Tells Relay whenever a flow in the data namespace fails (opens an i
 tasks:
   - id: notify
     type: io.kestra.plugin.core.http.Request
-    uri: "__RELAY_API__/webhooks/kestra"
+    uri: "__RELAY_API__/webhooks/orchestrator"
     method: POST
     contentType: application/json
     headers:

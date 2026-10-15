@@ -1,8 +1,8 @@
 #!/bin/sh
-# Wipe all data (Postgres + Kestra storage) and start again with fresh demo data.
+# Wipe all data (Postgres + uploaded recordings) and start again with fresh demo data.
 set -e
 cd "$(dirname "$0")/.."
-docker compose down -v
+docker compose down -v --remove-orphans
 cp pipelines/templates/*.sql pipelines/models/
 docker compose up -d
 echo "Waiting for the API and demo data…"

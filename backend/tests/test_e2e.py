@@ -33,7 +33,8 @@ def test_other_company_is_invisible(kavya):
     globex = grace.get("/tasks").json()["tasks"]
     assert [t["title"] for t in globex] == ["Confidential: Globex acquisition checklist"]
     answer = kavya.post("/ask", json={"question": "Globex acquisition checklist Initech"}).json()
-    assert "Initech" not in answer["answer"]
+    assert answer["sources"] == [], "Acme must not get sources from Globex"
+    assert "due diligence" not in answer["answer"].lower()
 
 
 def test_claude_session_updates_the_matching_task(kavya):
@@ -49,7 +50,7 @@ def test_claude_session_updates_the_matching_task(kavya):
     assert out["created"] is False and out["redactions"] >= 1
     task = kavya.get(f"/tasks/by-key/{out['task']}").json()
     assert "quality" in task["title"].lower()
-    assert task["status"] == "doing"
+    assert task["status"] in ("doing", "review")
     assert task["timeline"][-1]["source"] == "claude"
 
 

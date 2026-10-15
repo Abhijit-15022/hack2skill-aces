@@ -10,7 +10,7 @@ import { cn, firstName, timeAgo } from "../lib/utils";
 
 const STATUS: Record<string, [string, any]> = {
   open: ["Open", "red"], investigating: ["Investigating…", "blue"], fix_proposed: ["Fix raised · waiting for review", "orange"],
-  verifying: ["Rerunning on Kestra…", "blue"], resolved: ["Resolved", "green"], needs_human: ["Needs a person", "red"],
+  verifying: ["Rerunning the pipeline…", "blue"], resolved: ["Resolved", "green"], needs_human: ["Needs a person", "red"],
 };
 
 export default function OnCall() {
@@ -24,7 +24,7 @@ export default function OnCall() {
       <PageHeader title="On-call" subtitle="Pipeline failures investigated by the on-call agent. A person approves every fix." />
       {list.error && <ErrorNote message={list.error} />}
       {list.data && list.data.incidents.length === 0 && (
-        <Empty title="No failures" icon={<Zap size={20} />}>When a Kestra flow fails, the agent opens an incident here within seconds.</Empty>
+        <Empty title="No failures" icon={<Zap size={20} />}>When a pipeline fails, the agent opens an incident here within seconds.</Empty>
       )}
       <div className="flex flex-wrap items-start gap-6">
         {list.data && list.data.incidents.length > 0 && (
@@ -79,7 +79,7 @@ function IncidentView({ id }: { id: number }) {
         </div>
         <div className="flex flex-wrap gap-1.5">
           <span className="chip">{i.key}</span>
-          <span className="chip">Kestra · {i.namespace}.{i.flow_id}</span>
+          <span className="chip">Pipeline · {i.namespace}.{i.flow_id}</span>
           <span className="chip">Detected {new Date(i.detected_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
           {i.owners?.business && <span className="chip">Business owner · {i.owners.business.name}</span>}
           {i.owners?.tech && <span className="chip">Tech owner · {i.owners.tech.name}</span>}
@@ -90,7 +90,7 @@ function IncidentView({ id }: { id: number }) {
       {i.status === "resolved" && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="flex items-center gap-3 rounded-2xl bg-green/[0.14] px-[18px] py-3.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#1A7431] text-white"><Check size={15} strokeWidth={2.6} /></span>
-          <div className="flex flex-col"><strong className="text-[14.5px] font-semibold">Fixed. {i.flow_id} reran on Kestra and passed.</strong>
+          <div className="flex flex-col"><strong className="text-[14.5px] font-semibold">Fixed. {i.flow_id} reran and passed.</strong>
             <span className="text-[13px] text-fg2">{i.key} and its review task are closed. Resolved {timeAgo(i.resolved_at)} after detection.</span></div>
         </motion.div>
       )}
@@ -175,7 +175,7 @@ function IncidentView({ id }: { id: number }) {
               <h3 className="mb-1.5 text-[15px] font-semibold">What happens next</h3>
               {[
                 <><strong className="font-semibold">{firstName(reviewer?.name) || "The owner"} reviews {fixRef}.</strong> {i.review_task && <Link className="text-accent-ink" to={`/tasks?task=${i.review_task.id}`}>{i.review_task.key}</Link>} was created for them.</>,
-                <>On approval, Relay <strong className="font-semibold">reruns {i.flow_id}</strong> on Kestra.</>,
+                <>On approval, Relay <strong className="font-semibold">reruns {i.flow_id}</strong>.</>,
                 <>If it passes, {i.key} closes and {i.owners?.business?.name ?? "the business owner"} <strong className="font-semibold">is told</strong>.</>,
               ].map((txt, n) => (
                 <div key={n} className="grid grid-cols-[24px_1fr] gap-2.5 py-2 text-[14px]"><span className="flex h-6 w-6 items-center justify-center rounded-full fill text-[12px] font-semibold">{n + 1}</span><span>{txt}</span></div>
@@ -193,7 +193,7 @@ function IncidentView({ id }: { id: number }) {
               <span className="text-center text-[12px] text-muted">Every action is recorded in the audit log.</span>
             </div>
           )}
-          {i.status === "verifying" && <div className="card flex items-center gap-3 px-5 py-4 text-[14px]"><Spinner />Rerunning {i.flow_id} on Kestra…</div>}
+          {i.status === "verifying" && <div className="card flex items-center gap-3 px-5 py-4 text-[14px]"><Spinner />Rerunning {i.flow_id}…</div>}
         </aside>
       </div>
     </div>

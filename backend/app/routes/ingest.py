@@ -1,4 +1,4 @@
-"""Inbound signals: hooks (Claude, git), email/calendar, Kestra webhooks, the warehouse runner, demo controls."""
+"""Inbound signals: hooks (Claude, git), email/calendar, orchestrator webhooks, the warehouse runner, demo controls."""
 import shutil
 from pathlib import Path
 
@@ -10,7 +10,7 @@ from .. import models as m
 from ..auth import Ctx, admin_ctx, require_ingest_token
 from ..config import get_settings
 from ..db import org_session, warehouse_engine
-from ..services import ingest, kestra, oncall, runner
+from ..services import ingest, oncall, pipeline, runner
 from ..services.core import enqueue
 
 router = APIRouter(tags=["ingest"])
@@ -57,17 +57,19 @@ async def ingest_signal(kind: str, request: Request, sync: bool = False):
         return JSONResponse({"queued": True, "event_id": event.id}, status_code=202)
 
 
-@router.post("/webhooks/kestra", dependencies=[Depends(require_ingest_token)])
-async def kestra_webhook(request: Request):
+@router.post("/webhooks/orchestrator", dependencies=[Depends(require_ingest_token)])
+@router.post("/webhooks/kestra", dependencies=[Depends(require_ingest_token)], include_in_schema=False)
+async def orchestrator_webhook(request: Request):
+    """For an external orchestrator (Kestra, Airflow, Dagster): {executionId, namespace, flowId, state}."""
     p = await request.json()
     namespace, flow_id, state = p.get("namespace"), p.get("flowId"), (p.get("state") or "").upper()
     with org_session(None, bypass=True) as db:
-        org_id = db.scalar(select(m.Resource.org_id).where(m.Resource.kind == "kestra_flow", m.Resource.name == flow_id))
+        org_id = db.scalar(select(m.Resource.org_id).where(m.Resource.kind == "pipeline", m.Resource.name == flow_id))
     if not org_id:
         return {"ignored": f"{namespace}.{flow_id} is not a flow Relay watches."}
     with org_session(org_id) as db:
         if state == "SUCCESS":
-            enqueue(db, org_id, "kestra_success", {"namespace": namespace, "flow_id": flow_id})
+            enqueue(db, org_id, "pipeline_success", {"namespace": namespace, "flow_id": flow_id})
             return {"ok": True}
         if state in ("FAILED", "WARNING", "KILLED"):
             inc = oncall.open_incident(db, org_id, namespace=namespace, flow_id=flow_id,
@@ -112,9 +114,9 @@ def break_pipeline(c: Ctx = Depends(admin_ctx)):
             "AND column_name='amount'")).scalar()
         if has_amount:
             conn.execute(text("ALTER TABLE raw.orders RENAME COLUMN amount TO net_amount"))
-    execution = kestra.run_flow("data", "orders_daily") if kestra.is_up() else None
-    return {"renamed": bool(has_amount), "kestra_execution": execution,
-            "note": None if execution else "Kestra is not reachable; call POST /webhooks/kestra to simulate."}
+    result = pipeline.run_and_report("orders_daily")
+    return {"renamed": bool(has_amount), "run": result["execution_id"], "state": result["state"],
+            "incident": result["incident"]}
 
 
 @router.post("/demo/pipeline/reset")
@@ -159,4 +161,5 @@ def demo_signal(kind: str, c: Ctx = Depends(admin_ctx)):
 
 @router.post("/demo/pipeline/run")
 def run_pipeline(c: Ctx = Depends(admin_ctx)):
-    return {"kestra_execution": kestra.run_flow("data", "orders_daily")}
+    result = pipeline.run_and_report("orders_daily")
+    return {"run": result["execution_id"], "state": result["state"], "incident": result["incident"]}

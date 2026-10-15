@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as m
 from ..config import get_settings
-from . import kestra, llm, runner
+from . import focus, llm, runner
 from .core import add_log, agent_user, audit, create_task, enqueue, feed, now, set_status
 
 log = logging.getLogger(__name__)
@@ -29,8 +29,7 @@ def open_incident(db: Session, org_id: int, *, namespace: str, flow_id: str, exe
     if existing:
         return existing
     agent = agent_user(db, org_id)
-    resource = db.scalar(select(m.Resource).where(m.Resource.kind == "kestra_flow",
-                                                  m.Resource.name == flow_id))
+    resource = db.scalar(select(m.Resource).where(m.Resource.kind == "pipeline", m.Resource.name == flow_id))
     team = db.get(m.Team, resource.owner_team_id) if resource and resource.owner_team_id else None
     numbers = [int(k.split("-")[1]) for k in db.scalars(select(m.Incident.key)) if k.split("-")[-1].isdigit()]
     incident = m.Incident(org_id=org_id, key=f"INC-{max(numbers, default=0) + 1:03d}", resource_id=resource.id if resource else None,
@@ -39,16 +38,17 @@ def open_incident(db: Session, org_id: int, *, namespace: str, flow_id: str, exe
     db.flush()
     task = create_task(db, org_id, title=f"{flow_id} failed", team=team, created_by=agent, assignee_id=agent.id,
                        type="incident", status="doing", priority="high", description_by_ai=True,
-                       description=f"Kestra reported {namespace}.{flow_id} failed (execution {execution_id}). "
+                       description=f"The {namespace}.{flow_id} pipeline failed (run {execution_id}). "
                                    "The on-call agent is investigating.",
-                       links=[{"kind": "kestra", "label": "Kestra execution",
-                               "url": kestra.ui_execution_url(namespace, flow_id, execution_id)}])
+                       links=[{"kind": "run", "label": f"Run {execution_id[:8]}", "ref": execution_id}])
     task.key = incident.key
     incident.task_id = task.id
-    add_log(db, org_id, source="oncall", summary=f"opened this from a Kestra failure", task=task, author=agent)
+    add_log(db, org_id, source="oncall", summary="opened this from a pipeline failure", task=task, author=agent)
     audit(db, org_id, actor=agent, action=f"Opened {incident.key}", target_type="incident", target_id=incident.id,
-          reason=f"Kestra reported {namespace}.{flow_id} failed", approved_by="Automatic")
+          reason=f"The {namespace}.{flow_id} pipeline failed", approved_by="Automatic")
     enqueue(db, org_id, "investigate", {"incident_id": incident.id})
+    if team and team.lead_id:
+        focus.notify(db, team.lead_id, "incident", f"{flow_id} failed", "The on-call agent is investigating.", task.id)
     return incident
 
 
@@ -60,17 +60,6 @@ def _step(incident: m.Incident, title: str, detail: str, started: float, code: s
         "title": title, "detail": detail, "code": code, "found": found,
         "t": round(time.monotonic() - started, 1),
     }]
-
-
-def _error_text(incident: m.Incident) -> str:
-    lines = []
-    try:
-        for entry in kestra.get_logs(incident.execution_id):
-            if entry.get("level") in ("ERROR", "WARN"):
-                lines.append(entry.get("message", ""))
-    except httpx.HTTPError as exc:
-        log.warning("Could not read Kestra logs: %s", exc)
-    return "\n".join(lines)
 
 
 def _runner_errors(db: Session, execution_id: str) -> list[m.RunnerRun]:
@@ -108,9 +97,8 @@ def investigate(db: Session, incident_id: int) -> m.Incident:
 
     # 1. logs
     errors = _runner_errors(db, incident.execution_id)
-    kestra_err = _error_text(incident)
     failing = errors[0] if errors else None
-    error_msg = (failing.error if failing else kestra_err) or "No error message found."
+    error_msg = (failing.error if failing else "") or "No error message found."
     model_name = failing.model if failing else None
     first_line = error_msg.strip().splitlines()[0][:300]
     _step(incident, "Read the failure logs",
@@ -314,7 +302,7 @@ def _hand_off(db, incident, task, agent, fix, culprit_task, impacted_owners, dow
             description_by_ai=True,
             description=(f"{fix['summary']} {incident.root_cause} Low risk: one model, "
                          f"{fix['added'] + fix['removed']} changed lines. Once approved, Relay applies it, "
-                         f"reruns {incident.flow_id} on Kestra and closes {incident.key} if it passes."),
+                         f"reruns {incident.flow_id} and closes {incident.key} if it passes."),
             due_at=now() + timedelta(hours=4),
             links=[{"kind": "incident", "label": incident.key, "ref": incident.key}]
             + ([{"kind": "pr", "label": fix_label, "url": fix.get("pr_url")}] if fix.get("pr_url") else []),
@@ -323,6 +311,8 @@ def _hand_off(db, incident, task, agent, fix, culprit_task, impacted_owners, dow
         add_log(db, org_id, source="oncall", task=task, author=agent,
                 summary=f"raised {fix_label} and created review task {review.key}")
         reviewer_user = db.get(m.User, reviewer) if reviewer else None
+        focus.notify(db, reviewer, "review", f"Review {fix_label} for {incident.flow_id}",
+                     f"{incident.root_cause_title}. The dashboard refreshes once it's merged.", review.id)
         feed(db, org_id, kind="needs", team_id=owner_team.id if owner_team else None, task_id=review.id,
              incident_id=incident.id, subject_user_id=reviewer,
              title=f"{fix_label} is waiting on {reviewer_user.name.split()[0] if reviewer_user else 'review'}",
@@ -340,7 +330,7 @@ def _hand_off(db, incident, task, agent, fix, culprit_task, impacted_owners, dow
          task_id=task.id, title=f"{incident.flow_id} failed — {'cause found, fix raised' if fix else 'needs a person'}",
          body=f"Investigated in {'under a second' if took < 1 else f'{took:.0f} s'}: {incident.root_cause_title.lower()}."
               + (f" {', '.join(sorted(impacted_owners))} told the dashboard is delayed." if impacted_owners else ""),
-         sources=[f"Kestra · {incident.namespace}.{incident.flow_id}", incident.key],
+         sources=[f"Pipeline · {incident.namespace}.{incident.flow_id}", incident.key],
          actions=[{"type": "open_incident", "incident_id": incident.id}], score=0.9,
          dedupe_key=f"incident-{incident.id}")
     if business and business.id != (owner_team.id if owner_team else None):
@@ -395,11 +385,18 @@ def approve(db: Session, incident: m.Incident, approver: m.User) -> m.Incident:
 
 
 def rerun(db: Session, incident: m.Incident) -> str | None:
-    execution_id = kestra.run_flow(incident.namespace, incident.flow_id)
+    from . import pipeline
+
+    result = pipeline.run(incident.flow_id)
     task = db.get(m.Task, incident.task_id)
     add_log(db, incident.org_id, source="oncall", task=task, author=agent_user(db, incident.org_id),
-            summary=f"reran {incident.flow_id} on Kestra" + (f" (execution {execution_id})" if execution_id else " — could not start the run"))
-    return execution_id
+            summary=f"reran {incident.flow_id}: " + ("passed" if result["state"] == "SUCCESS"
+                                                      else f"failed again on {result['failed_model']}"))
+    if result["state"] == "SUCCESS":
+        on_success(db, incident.namespace, incident.flow_id)
+    else:
+        incident.status = "needs_human"
+    return result["execution_id"]
 
 
 def on_success(db: Session, namespace: str, flow_id: str) -> list[m.Incident]:
@@ -417,7 +414,7 @@ def on_success(db: Session, namespace: str, flow_id: str) -> list[m.Incident]:
         feed(db, inc.org_id, kind="win", incident_id=inc.id, task_id=inc.task_id,
              team_id=task.team_id if task else None, title=f"{flow_id} is fixed and green again",
              body=f"{inc.root_cause_title}. Fixed and verified {mins:.0f} min after it was detected.",
-             sources=[inc.key, f"Kestra \u00b7 {inc.namespace}.{flow_id}"], score=0.5,
+             sources=[inc.key, f"Pipeline \u00b7 {inc.namespace}.{flow_id}"], score=0.5,
              actions=[{"type": "open_incident", "incident_id": inc.id}], dedupe_key=f"incident-{inc.id}")
         fyi = db.scalar(select(m.FeedItem).where(m.FeedItem.dedupe_key == f"fyi-{inc.id}"))
         if fyi:

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models as m
-from . import llm, sop
+from . import focus, llm, sop
 from .core import add_log, audit, create_task, feed, now, refresh_task_embedding, set_status, user_teams
 from .matching import match_task
 from .redact import redact
@@ -268,6 +268,7 @@ def ingest_email(db: Session, org_id: int, p: dict) -> dict:
         audit(db, org_id, actor=None, action=f"Created {task.key} from an email to {user.name}",
               target_type="task", target_id=task.id, reason=f"Request from {sender}",
               approved_by="Automatic (task update)")
+        focus.notify(db, user.id, "request", f"New request from {sender.split('@')[0].title()}", task.title, task.id)
         result[rcpt] = {"request": True, "task": task.key, "found_previous": bool(previous)}
     return result
 

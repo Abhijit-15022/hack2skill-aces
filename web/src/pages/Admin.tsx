@@ -1,4 +1,4 @@
-import { CalendarDays, Mail, Play, RotateCcw, Terminal, Unplug, Zap } from "lucide-react";
+import { AudioLines, BellOff, CalendarDays, Mail, Play, RotateCcw, Sunrise, Terminal, Unplug, Zap } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Page } from "../components/Layout";
@@ -193,16 +193,22 @@ function Demo() {
     }
   };
   const items = [
-    { key: "break", icon: Zap, title: "Break the pipeline", sub: "Renames raw.orders.amount (yesterday's refactor) and runs orders_daily on Kestra. The on-call agent takes over.", path: "/demo/pipeline/break",
-      after: (r: any) => (r.kestra_execution ? `Kestra run ${r.kestra_execution} started — watch On-call` : r.note), go: "/oncall" },
+    { key: "plans", icon: Sunrise, title: "Plan everyone's day", sub: "What the 07:00 job does: Gemini picks each person's top 3, estimates them and books focus time.",
+      path: "/demo/plan-everyone", after: (r: any) => `${r.queued} plans queued`, go: "/" },
+    { key: "focus", icon: BellOff, title: "Meera starts focusing, 5 pings arrive", sub: "Starts a 50-minute focus block for Meera and sends five notifications. Only the urgent one should get through.",
+      path: "/demo/focus/meera@acme.test", after: (r: any) => `${r.held} held, ${r.delivered} let through. Sign in as Meera to see it.`, go: "/" },
+    { key: "meeting", icon: AudioLines, title: "Process the sample meeting", sub: "A 64-second Data and Finance sync: Gemini finds decisions, creates tasks and hands work over.",
+      path: "/demo/meeting/sample", after: () => "Processing. Watch it on Meetings.", go: "/meetings" },
+    { key: "break", icon: Zap, title: "Break the pipeline", sub: "Renames raw.orders.amount (yesterday's refactor) and runs orders_daily. The on-call agent takes over.",
+      path: "/demo/pipeline/break", after: (r: any) => (r.incident ? `${r.incident} opened. Watch On-call.` : `Run ${r.state.toLowerCase()}`), go: "/oncall" },
     { key: "email", icon: Mail, title: "Ananya emails Meera", sub: "An ad-hoc request arrives. Relay creates a task and finds last quarter's reply.", path: "/demo/signal/email",
       after: (r: any) => `Task ${r.result["meera@acme.test"]?.task ?? "—"} created`, go: "/tasks" },
     { key: "calendar", icon: CalendarDays, title: "Priya books the induction", sub: "A calendar invite ticks off step 4 of Rahul's onboarding SOP.", path: "/demo/signal/calendar",
       after: (r: any) => `SOP steps touched: ${r.result.sop_steps.map((s: any) => s.status).join(", ") || "none"}`, go: "/projects" },
     { key: "claude", icon: Terminal, title: "Rohan finishes a Claude session", sub: "The session-end hook summarises the work into the matching task.", path: "/demo/signal/claude",
       after: (r: any) => `${r.result.created ? "Created" : "Updated"} ${r.result.task} (${r.result.matched})`, go: "/tasks" },
-    { key: "feed", icon: RotateCcw, title: "Rebuild the feed", sub: "What the 08:00 Kestra job does every weekday.", path: "/feed/rebuild", after: (r: any) => `${r.created_or_updated} cards refreshed`, go: "/" },
-    { key: "reset", icon: RotateCcw, title: "Reset the pipeline", sub: "Puts the column and model SQL back so you can run the demo again.", path: "/demo/pipeline/reset", after: () => "Pipeline reset" },
+    { key: "feed", icon: RotateCcw, title: "Rebuild the feed", sub: "What the 08:00 job does every weekday.", path: "/feed/rebuild", after: (r: any) => `${r.created_or_updated} cards refreshed`, go: "/feed" },
+    { key: "reset", icon: RotateCcw, title: "Reset the pipeline", sub: "Puts the column and model SQL back so you can break it again.", path: "/demo/pipeline/reset", after: () => "Pipeline reset" },
   ];
   return (
     <div className="flex flex-col gap-4">

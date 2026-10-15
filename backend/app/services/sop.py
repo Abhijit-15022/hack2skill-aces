@@ -143,9 +143,11 @@ def _score(step: m.SopStep, project: m.Project, evidence: str) -> float:
     semantic = llm.cosine(llm.embed_one(evidence, "RETRIEVAL_QUERY"),
                           llm.embed_one(f"{step.title}. {step.evidence_hint}"))
     score = max(lexical, semantic if llm.enabled() else lexical)
-    if project.subject and project.subject.split()[0].lower() in ev:
-        score += 0.2
-    return min(score, 1.0)
+    if project.subject and project.subject.lower() in ev:
+        score += 0.3
+    elif project.subject and project.subject.split()[0].lower() in ev:
+        score += 0.1
+    return score
 
 
 def _judge(step: m.SopStep, project: m.Project, evidence: str) -> float | None:
@@ -173,7 +175,7 @@ def match_evidence(db: Session, log: m.WorkLog, kind: str, evidence: str) -> lis
     ).all()
     scored = sorted(((_score(st, pr, evidence), sp, st, pr) for sp, st, pr in rows), key=lambda x: x[0], reverse=True)
     touched = []
-    for score, sp, step, project in scored[:2]:
+    for score, sp, step, project in scored[:3]:
         if score < ASK:
             continue
         judged = _judge(step, project, evidence)

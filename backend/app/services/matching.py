@@ -42,6 +42,8 @@ def match_task(db: Session, user: m.User, text: str, hints: list[str] = ()) -> t
     if not candidates:
         return None, 0.0, "no open tasks"
     vec = llm.embed_one(text, task="RETRIEVAL_QUERY")
+    if vec is None:
+        return None, 0.0, "search unavailable"
     scored = []
     for t in candidates:
         score = llm.cosine(vec, t.embedding)

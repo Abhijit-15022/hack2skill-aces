@@ -39,6 +39,8 @@ class User(Base, TimestampMixin):
     color: Mapped[str] = mapped_column(String(9), default="#3A3A3C")
     is_org_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     email_capture: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Consent to show personal wellbeing signals (after-hours work) to managers; workload is always visible.
+    share_wellbeing: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Team(Base, TimestampMixin):
@@ -65,7 +67,7 @@ class TeamMember(Base):
 
 
 class Resource(Base, TimestampMixin):
-    """Anything a workflow touches: Kestra flows, tables, repos, sheets, inboxes, connections."""
+    """Anything a workflow touches: pipelines, tables, repos, sheets, inboxes, connections."""
     __tablename__ = "resources"
     id: Mapped[int] = mapped_column(primary_key=True)
     org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
@@ -146,6 +148,9 @@ class Task(Base, TimestampMixin):
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    estimate_min: Mapped[int | None] = mapped_column(Integer)
+    actual_min: Mapped[int | None] = mapped_column(Integer)  # focused minutes spent, known for finished tasks
     links: Mapped[list] = mapped_column(JSONB, default=list)  # [{kind, label, url, ref}]
     embedding = mapped_column(Vector(EMBED_DIM), nullable=True)
 
@@ -157,7 +162,7 @@ class WorkLog(Base, TimestampMixin):
     task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), index=True)
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     on_behalf_of_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    source: Mapped[str] = mapped_column(String(12))  # claude|git|email|calendar|oncall|manual|github|kestra|sop
+    source: Mapped[str] = mapped_column(String(12))  # claude|git|email|calendar|meeting|oncall|manual|github|sop
     summary: Mapped[str] = mapped_column(Text)
     raw_ref: Mapped[str | None] = mapped_column(String(300))
     meta: Mapped[dict] = mapped_column(JSONB, default=dict)
@@ -275,7 +280,7 @@ class Event(Base, TimestampMixin):
 
 
 class RunnerRun(Base, TimestampMixin):
-    """Log of warehouse model runs triggered by Kestra (no RLS: infrastructure table)."""
+    """Log of warehouse model runs by the pipeline runner (no RLS: infrastructure table)."""
     __tablename__ = "runner_runs"
     id: Mapped[int] = mapped_column(primary_key=True)
     model: Mapped[str] = mapped_column(String(120))
@@ -285,7 +290,83 @@ class RunnerRun(Base, TimestampMixin):
     execution_id: Mapped[str | None] = mapped_column(String(100))
 
 
+class CalendarEvent(Base, TimestampMixin):
+    __tablename__ = "calendar_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    kind: Mapped[str] = mapped_column(String(10), default="meeting")  # meeting | focus | other
+    source: Mapped[str] = mapped_column(String(10), default="calendar")  # calendar | relay
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))
+    attendees: Mapped[list] = mapped_column(JSONB, default=list)
+
+
+class DayPlan(Base, TimestampMixin):
+    __tablename__ = "day_plans"
+    __table_args__ = (UniqueConstraint("user_id", "day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    day: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD in the org's timezone
+    summary: Mapped[str] = mapped_column(Text, default="")
+    items: Mapped[list] = mapped_column(JSONB, default=list)
+    focus_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Notification(Base, TimestampMixin):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # nudge|review|request|incident|kudos|health|meeting|fyi
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text, default="")
+    urgent: Mapped[bool] = mapped_column(Boolean, default=False)
+    why: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), default="delivered")  # delivered | held | released | read
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Meeting(Base, TimestampMixin):
+    __tablename__ = "meetings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))
+    title: Mapped[str] = mapped_column(String(300))
+    file_name: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(12), default="processing")  # processing | done | failed
+    summary: Mapped[str] = mapped_column(Text, default="")
+    result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class Standup(Base, TimestampMixin):
+    __tablename__ = "standups"
+    __table_args__ = (UniqueConstraint("team_id", "day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    day: Mapped[str] = mapped_column(String(10))
+    people: Mapped[list] = mapped_column(JSONB, default=list)
+    by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 RLS_TABLES = [
     "users", "teams", "team_members", "resources", "lineage", "sops", "sop_steps", "projects", "tasks",
     "work_logs", "email_requests", "step_progress", "incidents", "feed_items", "reactions", "audit_log",
+    "calendar_events", "day_plans", "notifications", "meetings", "standups",
+]
+
+# Columns added after the first release; init_db adds them to existing databases.
+ADDED_COLUMNS = [
+    ("users", "share_wellbeing", "boolean DEFAULT false"),
+    ("tasks", "started_at", "timestamptz"),
+    ("tasks", "estimate_min", "integer"),
+    ("tasks", "actual_min", "integer"),
 ]

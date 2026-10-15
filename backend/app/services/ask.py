@@ -20,6 +20,8 @@ def search(db: Session, viewer: m.User, question: str, k: int = 10) -> list[dict
     vec = llm.embed_one(question, "RETRIEVAL_QUERY")
     visible = _visible_tasks(db, viewer)
     out: list[dict] = []
+    if vec is None:
+        return _keyword_search(db, viewer, question, visible, k)
     tasks = db.scalars(select(m.Task).where(m.Task.id.in_(visible)).order_by(m.Task.embedding.cosine_distance(vec)).limit(k)).all()
     for t in tasks:
         out.append({"type": "task", "id": t.id, "title": f"{t.title}", "meta": f"{t.key} · {t.status}",
@@ -60,6 +62,17 @@ def search(db: Session, viewer: m.User, question: str, k: int = 10) -> list[dict
             seen.add(key)
             unique.append(s)
     return unique[:k]
+
+
+def _keyword_search(db: Session, viewer: m.User, question: str, visible, k: int) -> list[dict]:
+    words = [w for w in re.findall(r"[a-z0-9_]{4,}", question.lower())][:6]
+    if not words:
+        return []
+    cond = or_(*[m.WorkLog.summary.ilike(f"%{w}%") for w in words])
+    logs = db.scalars(select(m.WorkLog).where(cond, or_(m.WorkLog.task_id.in_(visible), m.WorkLog.author_id == viewer.id))
+                      .order_by(m.WorkLog.created_at.desc()).limit(k)).all()
+    return [{"type": "log", "id": lg.id, "task_id": lg.task_id, "title": "Work log", "meta": f"{lg.created_at:%d %b}",
+             "text": lg.summary, "snippet": lg.summary, "score": 0.2} for lg in logs]
 
 
 def answer(db: Session, viewer: m.User, question: str) -> dict:

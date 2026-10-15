@@ -1,4 +1,4 @@
-import { ClipboardList, FolderKanban, Home, LogOut, Moon, Search, Settings2, SquareCheckBig, Sun, Zap } from "lucide-react";
+import { AudioLines, ClipboardList, FolderKanban, HeartPulse, Home, LogOut, Moon, Newspaper, Search, Settings2, SquareCheckBig, Sun, Sunrise, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useApi } from "../lib/api";
@@ -8,11 +8,14 @@ import { AskProvider, useAsk } from "./Ask";
 import { Avatar, TeamDot } from "./ui";
 
 const NAV = [
-  { to: "/", label: "Home", icon: Home, end: true },
+  { to: "/", label: "Today", icon: Sunrise, end: true },
+  { to: "/feed", label: "Feed", icon: Newspaper },
   { to: "/tasks", label: "Tasks", icon: SquareCheckBig },
-  { to: "/oncall", label: "On-call", icon: Zap },
+  { to: "/meetings", label: "Meetings", icon: AudioLines },
+  { to: "/team", label: "Team", icon: HeartPulse },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/sops", label: "SOPs", icon: ClipboardList },
+  { to: "/oncall", label: "On-call", icon: Zap },
 ];
 
 export function Logo({ size = 30 }: { size?: number }) {
@@ -86,11 +89,11 @@ function TabBar() {
     cn("flex min-w-[56px] flex-col items-center justify-center gap-0.5 text-[10.5px] font-semibold", isActive ? "text-accent" : "text-muted");
   return (
     <nav aria-label="Tabs" className="material fixed inset-x-0 bottom-0 z-20 flex h-[78px] justify-around border-t border-line/[0.07] px-2 pb-5 pt-1 md:hidden">
-      <NavLink to="/" end className={tab}><Home size={24} strokeWidth={1.9} />Today</NavLink>
-      <NavLink to="/tasks" className={tab}><SquareCheckBig size={24} strokeWidth={1.9} />Tasks</NavLink>
+      <NavLink to="/" end className={tab}><Sunrise size={24} strokeWidth={1.9} />Today</NavLink>
+      <NavLink to="/feed" className={tab}><Home size={24} strokeWidth={1.9} />Feed</NavLink>
       <button onClick={() => ask()} className={tab({ isActive: false })}><Search size={24} strokeWidth={1.9} />Ask</button>
-      <NavLink to="/oncall" className={tab}><Zap size={24} strokeWidth={1.9} />On-call</NavLink>
-      <NavLink to="/projects" className={tab}><FolderKanban size={24} strokeWidth={1.9} />Projects</NavLink>
+      <NavLink to="/tasks" className={tab}><SquareCheckBig size={24} strokeWidth={1.9} />Tasks</NavLink>
+      <NavLink to="/team" className={tab}><HeartPulse size={24} strokeWidth={1.9} />Team</NavLink>
     </nav>
   );
 }

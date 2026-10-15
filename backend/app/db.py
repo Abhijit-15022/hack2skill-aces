@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import get_settings
-from .models import RLS_TABLES, Base
+from .models import ADDED_COLUMNS, RLS_TABLES, Base
 
 settings = get_settings()
 engine = create_engine(settings.database_url, pool_pre_ping=True, pool_size=10, max_overflow=10)
@@ -40,6 +40,11 @@ def init_db() -> None:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.execute(text("SELECT pg_advisory_xact_lock(424242)"))
         Base.metadata.create_all(conn)
+        for table, column, ddl in ADDED_COLUMNS:
+            exists = conn.execute(text("SELECT 1 FROM information_schema.columns WHERE table_name = :t "
+                                       "AND column_name = :c"), {"t": table, "c": column}).scalar()
+            if not exists:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
         for table in RLS_TABLES:
             # Only take the ALTER TABLE lock when something is missing: the api and worker start together.
             done = conn.execute(text(

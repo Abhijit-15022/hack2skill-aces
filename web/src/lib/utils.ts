@@ -45,5 +45,6 @@ export const SOURCE_LABEL: Record<string, string> = {
   manual: "Update",
   sop: "SOP",
   github: "GitHub",
-  kestra: "Kestra",
+  meeting: "Meeting",
+  run: "Pipeline run",
 };

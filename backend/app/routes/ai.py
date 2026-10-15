@@ -8,7 +8,7 @@ from .. import serialize as ser
 from ..auth import Ctx, ctx
 from ..services import ask as ask_svc
 from ..services import feed as feed_svc
-from ..services import oncall
+from ..services import focus, oncall
 from ..services.core import add_log, audit, user_teams
 
 router = APIRouter(tags=["ai"])
@@ -47,9 +47,11 @@ def react(item_id: int, body: ReactIn, c: Ctx = Depends(ctx)):
         target = c.db.get(m.User, task.assignee_id) if task.assignee_id else None
         add_log(c.db, c.org_id, source="manual", task=task, author=c.user,
                 summary=f"nudged {target.name if target else 'the assignee'}")
+        focus.notify(c.db, task.assignee_id, "nudge", f"{c.user.name.split()[0]} nudged you on {task.key}", task.title, task.id)
         audit(c.db, c.org_id, actor=c.user, action=f"Nudged {target.name if target else 'assignee'} on {task.key}",
               target_type="task", target_id=task.id)
     if body.kind == "kudos" and item.subject_user_id:
+        focus.notify(c.db, item.subject_user_id, "kudos", f"{c.user.name.split()[0]} sent you kudos", item.title)
         audit(c.db, c.org_id, actor=c.user, action="Sent kudos", target_type="user", target_id=item.subject_user_id)
     return {"ok": True, "active": True}
 
